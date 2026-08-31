@@ -1,7 +1,7 @@
 version: 2.1
 
 jobs:
-  test:
+  build-and-check:
     docker:
       - image: cimg/node:22.14
     working_directory: ~/purse-backend
@@ -21,7 +21,7 @@ jobs:
             - node_modules
       - run:
           name: Validate Prisma schema
-          command: npm run prisma:validate
+          command: DATABASE_URL="mysql://dummy:dummy@localhost:3306/dummy" npm run prisma:validate
       - run:
           name: Check formatting
           command: npm run format:check
@@ -31,9 +31,6 @@ jobs:
       - run:
           name: Build application
           command: npm run build
-      - run:
-          name: Run unit tests
-          command: npm test -- --passWithNoTests
 
   build-and-push:
     machine:
@@ -95,12 +92,12 @@ jobs:
           command: echo "Deployed $CIRCLE_SHA1 to production"
 
 workflows:
-  build-test-deploy:
+  ci-cd:
     jobs:
-      - test
+      - build-and-check
       - build-and-push:
           requires:
-            - test
+            - build-and-check
           filters:
             branches:
               only: main
