@@ -48,10 +48,7 @@ export class AppLoggerService implements LoggerService {
     );
   }
 
-  business(
-    event: string,
-    data?: LogContext,
-  ): void {
+  business(event: string, data?: LogContext): void {
     this.logger.info(
       {
         ...this.enrich(),
@@ -63,10 +60,7 @@ export class AppLoggerService implements LoggerService {
     );
   }
 
-  security(
-    event: string,
-    data?: LogContext,
-  ): void {
+  security(event: string, data?: LogContext): void {
     this.logger.warn(
       {
         ...this.enrich(),
@@ -78,10 +72,7 @@ export class AppLoggerService implements LoggerService {
     );
   }
 
-  otp(
-    event: string,
-    data: LogContext & { code?: string },
-  ): void {
+  otp(event: string, data: LogContext & { code?: string }): void {
     if (process.env.LOG_OTP_CODES === 'false') {
       const { code: _code, ...safeData } = data ?? {};
 

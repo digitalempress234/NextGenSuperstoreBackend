@@ -43,10 +43,7 @@ export class CartController {
     totalPrice: 950,
   })
   @StandardErrors()
-  addItem(
-    @CurrentUser('id') userId: number,
-    @Body() dto: AddCartItemDto,
-  ) {
+  addItem(@CurrentUser('id') userId: number, @Body() dto: AddCartItemDto) {
     return this.cartService.add(userId, dto.storeProductId, dto.quantity);
   }
 
@@ -66,11 +63,7 @@ export class CartController {
     @Param('storeProductId', ParseIntPipe) storeProductId: number,
     @Body() dto: UpdateCartItemDto,
   ) {
-    return this.cartService.updateQuantity(
-      userId,
-      storeProductId,
-      dto.quantity,
-    );
+    return this.cartService.updateQuantity(userId, storeProductId, dto.quantity);
   }
 
   @Delete('items')
@@ -82,7 +75,6 @@ export class CartController {
   clear(@CurrentUser('id') userId: number) {
     return this.cartService.clear(userId);
   }
-
 
   @Delete('items/:storeProductId')
   @ApiOperation({ summary: 'Remove a store-specific product offer from cart' })

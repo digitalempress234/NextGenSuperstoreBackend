@@ -19,7 +19,11 @@ export class UploadsController {
 
   @Post()
   @ApiConsumes('multipart/form-data')
-  @OkExample({ url: 'https://res.cloudinary.com/...', publicId: 'purse/...', resourceType: 'image' })
+  @OkExample({
+    url: 'https://res.cloudinary.com/...',
+    publicId: 'purse/...',
+    resourceType: 'image',
+  })
   @UseInterceptors(FileInterceptor('file'))
   async upload(@UploadedFile() file?: Express.Multer.File) {
     if (!file) {

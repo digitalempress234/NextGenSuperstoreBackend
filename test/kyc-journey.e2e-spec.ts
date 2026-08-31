@@ -27,7 +27,7 @@ describe('KYC & CAC Verification Journey E2E', () => {
     app.setGlobalPrefix('purse');
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.use(cookieParser());
-    
+
     await app.init();
 
     const qoreidService = app.get(QoreIDService);
@@ -41,11 +41,11 @@ describe('KYC & CAC Verification Journey E2E', () => {
     });
     jest.spyOn(qoreidService, 'verifyNin').mockResolvedValue({
       summary: { status: 'VERIFIED', state: 'SUCCESS' },
-      applicant: { firstname: 'Test', lastname: 'Rider' }
+      applicant: { firstname: 'Test', lastname: 'Rider' },
     });
     jest.spyOn(qoreidService, 'verifyNinFace').mockResolvedValue({
       summary: { status: 'VERIFIED', state: 'SUCCESS' },
-      faceMatchScore: 98
+      faceMatchScore: 98,
     });
     jest.spyOn(qoreidService, 'verifyCac').mockResolvedValue({
       qoreidReference: 'cac-ref-123',
@@ -55,10 +55,9 @@ describe('KYC & CAC Verification Journey E2E', () => {
       companyType: 'Private Limited',
       incorporatedAt: new Date('2020-01-01'),
     });
-    
-    
+
     const passwordHash = await bcrypt.hash('Password123!', 10);
-    
+
     // Admin setup
     const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@superstore.com';
     let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -91,9 +90,13 @@ describe('KYC & CAC Verification Journey E2E', () => {
     });
     riderId = rider.id;
     await prisma.riderProfile.create({ data: { userId: rider.id } });
-    
+
     // Add RIDER role
-    const riderRole = await prisma.role.upsert({ where: { name: 'RIDER' }, update: {}, create: { name: 'RIDER', description: 'Rider', level: 1 } });
+    const riderRole = await prisma.role.upsert({
+      where: { name: 'RIDER' },
+      update: {},
+      create: { name: 'RIDER', description: 'Rider', level: 1 },
+    });
     await prisma.userRole.create({ data: { userId: rider.id, roleId: riderRole.id } });
 
     // Store Owner setup
@@ -115,13 +118,17 @@ describe('KYC & CAC Verification Journey E2E', () => {
         state: 'Lagos',
         address: '123 KYC St',
         isActive: false,
-      }
+      },
     });
     storeId = store.id;
     await prisma.merchantScope.create({ data: { userId: storeOwnerId, storeId } });
-    
+
     // Add VENDOR role
-    const vendorRole = await prisma.role.upsert({ where: { name: 'VENDOR' }, update: {}, create: { name: 'VENDOR', description: 'Vendor', level: 1 } });
+    const vendorRole = await prisma.role.upsert({
+      where: { name: 'VENDOR' },
+      update: {},
+      create: { name: 'VENDOR', description: 'Vendor', level: 1 },
+    });
     await prisma.userRole.create({ data: { userId: storeOwnerId, roleId: vendorRole.id } });
   });
 
@@ -143,13 +150,28 @@ describe('KYC & CAC Verification Journey E2E', () => {
   };
 
   it('Logins', async () => {
-    const adminRes = await req('post', '/purse/v1/auth/login').send({ email: process.env.SEED_ADMIN_EMAIL || 'admin@superstore.com', password: process.env.SEED_ADMIN_PASSWORD || 'superstore@2026' }).expect(201);
+    const adminRes = await req('post', '/purse/v1/auth/login')
+      .send({
+        email: process.env.SEED_ADMIN_EMAIL || 'admin@superstore.com',
+        password: process.env.SEED_ADMIN_PASSWORD || 'superstore@2026',
+      })
+      .expect(201);
     adminCookie = getCookie(adminRes, 'purse_access_token');
 
-    const riderRes = await req('post', '/purse/v1/auth/login').send({ email: (await prisma.user.findUnique({ where: { id: riderId } }))!.email, password: 'Password123!' }).expect(201);
+    const riderRes = await req('post', '/purse/v1/auth/login')
+      .send({
+        email: (await prisma.user.findUnique({ where: { id: riderId } }))!.email,
+        password: 'Password123!',
+      })
+      .expect(201);
     riderCookie = getCookie(riderRes, 'purse_access_token');
 
-    const storeRes = await req('post', '/purse/v1/auth/login').send({ email: (await prisma.user.findUnique({ where: { id: storeOwnerId } }))!.email, password: 'Password123!' }).expect(201);
+    const storeRes = await req('post', '/purse/v1/auth/login')
+      .send({
+        email: (await prisma.user.findUnique({ where: { id: storeOwnerId } }))!.email,
+        password: 'Password123!',
+      })
+      .expect(201);
     storeOwnerCookie = getCookie(storeRes, 'purse_access_token');
   });
 
@@ -180,15 +202,23 @@ describe('KYC & CAC Verification Journey E2E', () => {
   it('Rider creates a guarantor and document', async () => {
     const gu = await req('post', '/purse/v1/riders/guarantors')
       .set('Cookie', riderCookie)
-      .send({ fullName: 'Guarantor Test', phone: '+2348000000000', relationship: 'BROTHER', address: 'Test address' })
+      .send({
+        fullName: 'Guarantor Test',
+        phone: '+2348000000000',
+        relationship: 'BROTHER',
+        address: 'Test address',
+      })
       .expect(201);
     guarantorId = gu.body.id;
 
     // Direct DB insertion for GuarantorDocument since there's no endpoint to upload guarantor documents explicitly yet (handled via uploads mostly, but let's insert it)
     const gd = await prisma.guarantorDocument.create({
       data: {
-        guarantorId, type: 'NIN', documentNumber: '22222222222', url: 'http://test.com/guarantor.jpg'
-      }
+        guarantorId,
+        type: 'NIN',
+        documentNumber: '22222222222',
+        url: 'http://test.com/guarantor.jpg',
+      },
     });
     guarantorDocumentId = gd.id;
   });
@@ -209,7 +239,7 @@ describe('KYC & CAC Verification Journey E2E', () => {
       .set('Cookie', riderCookie)
       .send({ productCode: 'liveness', reference: 'ref-123' })
       .expect(201);
-      
+
     expect(app.get(QoreIDService).mintSdkSessionToken).toHaveBeenCalled();
     expect(res.body.sdkSessionToken).toBe('mock-sdk-token');
   });

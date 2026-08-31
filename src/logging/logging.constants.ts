@@ -24,14 +24,9 @@ export const ALWAYS_REDACT_PATHS = [
   '*.deliveryCodeHash',
 ];
 
-export const OTP_LOGGING_ENABLED =
-  process.env.LOG_OTP_CODES !== 'false';
+export const OTP_LOGGING_ENABLED = process.env.LOG_OTP_CODES !== 'false';
 
-export const OTP_REDACT_PATHS = [
-  '*.otp',
-  '*.otpCode',
-  '*.verificationCode',
-];
+export const OTP_REDACT_PATHS = ['*.otp', '*.otpCode', '*.verificationCode'];
 
 export const LOG_REDACT_PATHS = OTP_LOGGING_ENABLED
   ? ALWAYS_REDACT_PATHS

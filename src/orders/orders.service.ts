@@ -66,12 +66,7 @@ export class OrdersService {
     return order;
   }
 
-  async setStatus(
-    actorId: number,
-    id: number,
-    status: OrderStatus,
-    reason?: string,
-  ) {
+  async setStatus(actorId: number, id: number, status: OrderStatus, reason?: string) {
     const order = await this.prisma.order.findUnique({ where: { id } });
 
     if (!order) {
@@ -106,9 +101,14 @@ export class OrdersService {
     await this.notifications.notifyUser({
       userId: updatedOrder.userId,
       type: updatedOrder.currentStatus === 'CANCELLED' ? 'ORDER_CANCELLED' : 'ORDER_STATUS_UPDATE',
-      title: updatedOrder.currentStatus === 'CANCELLED' ? 'Order cancelled' : 'Order status updated',
+      title:
+        updatedOrder.currentStatus === 'CANCELLED' ? 'Order cancelled' : 'Order status updated',
       message: `Order ${updatedOrder.orderNumber} is now ${updatedOrder.currentStatus}.`,
-      data: { orderId: updatedOrder.id, orderNumber: updatedOrder.orderNumber, status: updatedOrder.currentStatus },
+      data: {
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.orderNumber,
+        status: updatedOrder.currentStatus,
+      },
       templateKey: 'orderStatus',
       templateData: {
         orderNumber: updatedOrder.orderNumber,

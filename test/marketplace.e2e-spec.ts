@@ -12,7 +12,7 @@ describe('Marketplace API contract', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    
+
     app.setGlobalPrefix('purse');
     app.enableVersioning({
       type: VersioningType.URI,
@@ -41,9 +41,7 @@ describe('Marketplace API contract', () => {
       });
 
     if (response.status === 200) {
-      expect(response.body.data ?? response.body).toHaveProperty(
-        'categories',
-      );
+      expect(response.body.data ?? response.body).toHaveProperty('categories');
     }
   });
 

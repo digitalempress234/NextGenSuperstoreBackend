@@ -1,11 +1,15 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import {
-  ApiCookieAuth,
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiTags,
-} from '@nestjs/swagger';
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../auth/public.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
@@ -26,7 +30,9 @@ export class CatalogController {
 
   @Public()
   @Get('products')
-  @ApiOperation({ summary: 'Search the master product catalog and return store offers for comparison' })
+  @ApiOperation({
+    summary: 'Search the master product catalog and return store offers for comparison',
+  })
   @ApiQuery({ name: 'q', required: false, example: 'coke' })
   @ApiQuery({ name: 'categoryId', required: false, example: 4 })
   @ApiQuery({ name: 'page', required: false, example: 1 })
@@ -68,9 +74,7 @@ export class CatalogController {
   @OkExample({
     id: 42,
     name: 'Coca-Cola 50cl',
-    offers: [
-      { id: 900, price: 450, stockQuantity: 20, storeId: 10 },
-    ],
+    offers: [{ id: 900, price: 450, stockQuantity: 20, storeId: 10 }],
   })
   @StandardErrors()
   product(@Param('id', ParseIntPipe) id: number) {
@@ -118,10 +122,7 @@ export class CatalogController {
   @ApiParam({ name: 'id', example: 42 })
   @OkExample({ id: 42, name: 'Coca-Cola 50cl', status: true })
   @StandardErrors()
-  updateProduct(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateProductDto,
-  ) {
+  updateProduct(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateProductDto) {
     return this.catalog.updateProduct(id, dto);
   }
 

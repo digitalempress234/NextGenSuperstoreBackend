@@ -1,9 +1,4 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  NestInterceptor,
-} from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Observable, tap } from 'rxjs';
 import { randomUUID } from 'node:crypto';
@@ -18,16 +13,11 @@ export class RequestContextInterceptor implements NestInterceptor {
     private readonly logger: AppLoggerService,
   ) {}
 
-  intercept(
-    executionContext: ExecutionContext,
-    next: CallHandler,
-  ): Observable<unknown> {
+  intercept(executionContext: ExecutionContext, next: CallHandler): Observable<unknown> {
     const http = executionContext.switchToHttp();
     const req = http.getRequest<Request>();
     const res = http.getResponse<Response>();
-    const requestId =
-      (req.headers['x-request-id'] as string | undefined) ??
-      randomUUID();
+    const requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
 
     const requestContext = {
       requestId,
@@ -48,31 +38,34 @@ export class RequestContextInterceptor implements NestInterceptor {
           event: 'request.started',
         });
 
-        next.handle().pipe(
-          tap({
-            next: () => {
-              this.logger.info('request.completed', {
-                eventType: 'http',
-                event: 'request.completed',
-                statusCode: res.statusCode,
-                durationMs: Date.now() - startedAt,
-              });
-            },
-            error: (error: unknown) => {
-              this.logger.error(
-                'request.failed',
-                error instanceof Error ? error.stack : undefined,
-                'HTTP',
-              );
-              this.logger.info('request.failed.metrics', {
-                eventType: 'http',
-                event: 'request.failed',
-                statusCode: res.statusCode,
-                durationMs: Date.now() - startedAt,
-              });
-            },
-          }),
-        ).subscribe(subscriber);
+        next
+          .handle()
+          .pipe(
+            tap({
+              next: () => {
+                this.logger.info('request.completed', {
+                  eventType: 'http',
+                  event: 'request.completed',
+                  statusCode: res.statusCode,
+                  durationMs: Date.now() - startedAt,
+                });
+              },
+              error: (error: unknown) => {
+                this.logger.error(
+                  'request.failed',
+                  error instanceof Error ? error.stack : undefined,
+                  'HTTP',
+                );
+                this.logger.info('request.failed.metrics', {
+                  eventType: 'http',
+                  event: 'request.failed',
+                  statusCode: res.statusCode,
+                  durationMs: Date.now() - startedAt,
+                });
+              },
+            }),
+          )
+          .subscribe(subscriber);
       });
     });
   }

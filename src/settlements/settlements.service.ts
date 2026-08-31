@@ -12,7 +12,10 @@ const DEFAULTS = {
 } as const;
 
 type RateKey = keyof typeof DEFAULTS;
-type TxClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
+type TxClient = Omit<
+  PrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
 
 @Injectable()
 export class SettlementsService {
@@ -75,19 +78,19 @@ export class SettlementsService {
     const shippingFee = Number(order.shippingFee);
 
     // ── Compute deductions ──
-    const vatRate           = await this.getRate('vat_rate', tx);
+    const vatRate = await this.getRate('vat_rate', tx);
     const serviceChargeRate = await this.getRate('service_charge_rate', tx);
-    const platformFeeRate   = await this.getRate('platform_fee_rate', tx);
+    const platformFeeRate = await this.getRate('platform_fee_rate', tx);
 
-    const vatAmt           = subtotal * vatRate;
+    const vatAmt = subtotal * vatRate;
     const serviceChargeAmt = subtotal * serviceChargeRate;
-    const platformFeeAmt   = subtotal * platformFeeRate;
-    const storeAmt         = subtotal - vatAmt - serviceChargeAmt - platformFeeAmt;
+    const platformFeeAmt = subtotal * platformFeeRate;
+    const storeAmt = subtotal - vatAmt - serviceChargeAmt - platformFeeAmt;
 
     this.logger.log(
       `Settling order ${order.orderNumber}: subtotal=${subtotal} ` +
-      `vat=${vatAmt.toFixed(2)} svc=${serviceChargeAmt.toFixed(2)} ` +
-      `fee=${platformFeeAmt.toFixed(2)} store=${storeAmt.toFixed(2)} rider=${shippingFee}`,
+        `vat=${vatAmt.toFixed(2)} svc=${serviceChargeAmt.toFixed(2)} ` +
+        `fee=${platformFeeAmt.toFixed(2)} store=${storeAmt.toFixed(2)} rider=${shippingFee}`,
     );
 
     // ── Store wallet ──
@@ -111,10 +114,13 @@ export class SettlementsService {
         orderId: order.id,
         description: JSON.stringify({
           subtotal,
-          vatRate,      vatAmt:           parseFloat(vatAmt.toFixed(2)),
-          serviceChargeRate, serviceChargeAmt: parseFloat(serviceChargeAmt.toFixed(2)),
-          platformFeeRate,   platformFeeAmt:   parseFloat(platformFeeAmt.toFixed(2)),
-          storeAmt:          parseFloat(storeAmt.toFixed(2)),
+          vatRate,
+          vatAmt: parseFloat(vatAmt.toFixed(2)),
+          serviceChargeRate,
+          serviceChargeAmt: parseFloat(serviceChargeAmt.toFixed(2)),
+          platformFeeRate,
+          platformFeeAmt: parseFloat(platformFeeAmt.toFixed(2)),
+          storeAmt: parseFloat(storeAmt.toFixed(2)),
         }),
       },
     });
@@ -182,7 +188,9 @@ export class SettlementsService {
     });
 
     if (!riderWallet) {
-      this.logger.warn(`releaseRiderEarning: no wallet for rider userId=${earning.riderProfile.userId}`);
+      this.logger.warn(
+        `releaseRiderEarning: no wallet for rider userId=${earning.riderProfile.userId}`,
+      );
       return;
     }
 

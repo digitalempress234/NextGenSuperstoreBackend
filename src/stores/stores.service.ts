@@ -41,7 +41,9 @@ export class StoresService {
 
     const [totalOrders, pendingOrders, totalRevenueResult, totalProducts] = await Promise.all([
       this.prisma.order.count({ where: { storeId } }),
-      this.prisma.order.count({ where: { storeId, currentStatus: { in: ['ORDER_RECEIVED', 'CONFIRMED'] } } }),
+      this.prisma.order.count({
+        where: { storeId, currentStatus: { in: ['ORDER_RECEIVED', 'CONFIRMED'] } },
+      }),
       this.prisma.order.aggregate({
         _sum: { total: true },
         where: { storeId, currentStatus: { in: ['DELIVERED', 'COMPLETED'] } },
@@ -57,10 +59,7 @@ export class StoresService {
     };
   }
 
-  create(
-    userId: number,
-    body: CreateStoreDto,
-  ) {
+  create(userId: number, body: CreateStoreDto) {
     return this.prisma.store.create({
       data: {
         ownerUserId: userId,
@@ -148,5 +147,4 @@ export class StoresService {
       },
     });
   }
-
 }

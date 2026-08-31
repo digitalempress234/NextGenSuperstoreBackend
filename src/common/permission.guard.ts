@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 import { REQUIRED_PERMISSIONS } from './permissions.decorator';
@@ -19,14 +14,14 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
-      REQUIRED_PERMISSIONS,
-      [context.getHandler(), context.getClass()],
-    );
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
-      REQUIRED_ROLES,
-      [context.getHandler(), context.getClass()],
-    );
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(REQUIRED_PERMISSIONS, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>(REQUIRED_ROLES, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     if (!requiredPermissions?.length && !requiredRoles?.length) {
       return true;

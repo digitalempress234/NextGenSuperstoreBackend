@@ -19,7 +19,10 @@ describe('Shopping Journey E2E', () => {
   let productId: number;
 
   beforeAll(async () => {
-    app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'debug', 'log'], rawBody: true });
+    app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'debug', 'log'],
+      rawBody: true,
+    });
 
     app.setGlobalPrefix('purse');
     app.enableVersioning({
@@ -29,9 +32,9 @@ describe('Shopping Journey E2E', () => {
     app.use(cookieParser());
 
     await app.init();
-    
+
     const passwordHash = await bcrypt.hash('Password123!', 10);
-    
+
     const customer = await prisma.user.create({
       data: {
         email: `shopping-journey-${Date.now()}@test.com`,
@@ -101,9 +104,9 @@ describe('Shopping Journey E2E', () => {
             unitPrice: 5000,
             totalPrice: 5000,
             productName: product.name,
-          }
-        }
-      }
+          },
+        },
+      },
     });
   });
 
@@ -142,9 +145,7 @@ describe('Shopping Journey E2E', () => {
   });
 
   it('fetches wishlist', async () => {
-    await req('get', '/purse/v1/marketplace/wishlist')
-      .set('Cookie', customerCookie)
-      .expect(200);
+    await req('get', '/purse/v1/marketplace/wishlist').set('Cookie', customerCookie).expect(200);
   });
 
   it('removes from wishlist', async () => {
@@ -184,14 +185,11 @@ describe('Shopping Journey E2E', () => {
       data: { status: 'APPROVED' },
     });
 
-    const res = await req('get', `/purse/v1/reviews/product/${productId}`)
-      .expect(200);
+    const res = await req('get', `/purse/v1/reviews/product/${productId}`).expect(200);
     expect(res.body.length).toBeGreaterThan(0);
   });
 
   it('reads notifications', async () => {
-    await req('get', '/purse/v1/notifications')
-      .set('Cookie', customerCookie)
-      .expect(200);
+    await req('get', '/purse/v1/notifications').set('Cookie', customerCookie).expect(200);
   });
 });

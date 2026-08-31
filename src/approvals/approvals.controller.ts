@@ -1,17 +1,5 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  ParseIntPipe,
-  Post,
-} from '@nestjs/common';
-import {
-  ApiCookieAuth,
-  ApiOperation,
-  ApiParam,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
@@ -36,10 +24,7 @@ export class ApprovalsController {
     status: 'PENDING',
   })
   @StandardErrors()
-  create(
-    @CurrentUser('id') actorId: number,
-    @Body() dto: CreateApprovalRequestDto,
-  ) {
+  create(@CurrentUser('id') actorId: number, @Body() dto: CreateApprovalRequestDto) {
     return this.approvals.create(actorId, dto);
   }
 

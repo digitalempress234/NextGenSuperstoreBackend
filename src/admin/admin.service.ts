@@ -7,22 +7,17 @@ export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   async overview() {
-    const [
-      totalUsers,
-      totalStores,
-      totalOrders,
-      totalRevenueResult,
-      pendingApprovals,
-    ] = await Promise.all([
-      this.prisma.user.count(),
-      this.prisma.store.count({ where: { isActive: true } }),
-      this.prisma.order.count(),
-      this.prisma.payment.aggregate({
-        _sum: { amount: true },
-        where: { status: 'PAID' },
-      }),
-      this.prisma.riderProfile.count({ where: { onboardingStatus: 'UNDER_REVIEW' } }),
-    ]);
+    const [totalUsers, totalStores, totalOrders, totalRevenueResult, pendingApprovals] =
+      await Promise.all([
+        this.prisma.user.count(),
+        this.prisma.store.count({ where: { isActive: true } }),
+        this.prisma.order.count(),
+        this.prisma.payment.aggregate({
+          _sum: { amount: true },
+          where: { status: 'PAID' },
+        }),
+        this.prisma.riderProfile.count({ where: { onboardingStatus: 'UNDER_REVIEW' } }),
+      ]);
 
     return {
       totalUsers,

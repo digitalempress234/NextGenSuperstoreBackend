@@ -1,17 +1,5 @@
-import {
-  Body,
-  Controller,
-  Post,
-  Req,
-  Res,
-  UnauthorizedException,
-} from '@nestjs/common';
-import {
-  ApiCookieAuth,
-  ApiNoContentResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { ApiCookieAuth, ApiNoContentResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 
 import { OkExample, StandardErrors } from '../common/api-docs';
@@ -143,10 +131,7 @@ export class AuthController {
     session: { authenticated: true },
   })
   @StandardErrors()
-  async refresh(
-    @Req() request: Request,
-    @Res({ passthrough: true }) response: Response,
-  ) {
+  async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const refreshToken = request.cookies?.[REFRESH_COOKIE] as string | undefined;
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh authentication cookie is missing.');

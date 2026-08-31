@@ -28,14 +28,22 @@ describe('DeliveryTrackingService', () => {
   });
 
   it('rejects updates for riders not assigned to the delivery', async () => {
-    prisma.delivery.findUnique.mockResolvedValue({ id: 10, riderId: 99, status: DeliveryStatus.IN_TRANSIT });
-    await expect(
-      service.recordLocation(7, 10, { latitude: 6.5, longitude: 3.3 }),
-    ).rejects.toThrow('You are not assigned to this delivery.');
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 10,
+      riderId: 99,
+      status: DeliveryStatus.IN_TRANSIT,
+    });
+    await expect(service.recordLocation(7, 10, { latitude: 6.5, longitude: 3.3 })).rejects.toThrow(
+      'You are not assigned to this delivery.',
+    );
   });
 
   it('accepts an active location update and stores the GPS point', async () => {
-    prisma.delivery.findUnique.mockResolvedValue({ id: 10, riderId: 7, status: DeliveryStatus.IN_TRANSIT });
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 10,
+      riderId: 7,
+      status: DeliveryStatus.IN_TRANSIT,
+    });
     redis.client.set.mockResolvedValue('OK');
     prisma.deliveryLocation.create.mockResolvedValue({
       id: 1,
@@ -60,11 +68,15 @@ describe('DeliveryTrackingService', () => {
   });
 
   it('rate limits excessive location updates', async () => {
-    prisma.delivery.findUnique.mockResolvedValue({ id: 10, riderId: 7, status: DeliveryStatus.IN_TRANSIT });
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 10,
+      riderId: 7,
+      status: DeliveryStatus.IN_TRANSIT,
+    });
     redis.client.set.mockResolvedValue(null);
 
-    await expect(
-      service.recordLocation(7, 10, { latitude: 6.5, longitude: 3.3 }),
-    ).rejects.toThrow('Location update rate exceeded.');
+    await expect(service.recordLocation(7, 10, { latitude: 6.5, longitude: 3.3 })).rejects.toThrow(
+      'Location update rate exceeded.',
+    );
   });
 });

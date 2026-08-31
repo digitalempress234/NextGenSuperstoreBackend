@@ -43,15 +43,24 @@ export class NotificationsController {
 
   @Get('preferences')
   @ApiOperation({ summary: 'Get notification delivery preferences' })
-  @OkExample([{ type: 'ORDER_STATUS_UPDATE', inApp: true, email: true }], 'Notification preferences')
+  @OkExample(
+    [{ type: 'ORDER_STATUS_UPDATE', inApp: true, email: true }],
+    'Notification preferences',
+  )
   preferences(@CurrentUser('id') userId: number) {
     return this.notificationsService.preferences(userId);
   }
 
   @Patch('preferences')
   @ApiOperation({ summary: 'Update an in-app/email notification preference' })
-  @OkExample({ type: 'ORDER_STATUS_UPDATE', inApp: true, email: true }, 'Notification preference updated')
-  updatePreference(@CurrentUser('id') userId: number, @Body() dto: UpdateNotificationPreferenceDto) {
+  @OkExample(
+    { type: 'ORDER_STATUS_UPDATE', inApp: true, email: true },
+    'Notification preference updated',
+  )
+  updatePreference(
+    @CurrentUser('id') userId: number,
+    @Body() dto: UpdateNotificationPreferenceDto,
+  ) {
     return this.notificationsService.updatePreference(userId, dto);
   }
 }

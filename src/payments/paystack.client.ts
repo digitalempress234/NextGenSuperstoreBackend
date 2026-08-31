@@ -18,12 +18,7 @@ export class PaystackClient {
     };
   }
 
-  async initialize(
-    reference: string,
-    email: string,
-    amount: number,
-    callbackUrl?: string,
-  ) {
+  async initialize(reference: string, email: string, amount: number, callbackUrl?: string) {
     const response = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
       headers: this.headers(),
@@ -43,9 +38,7 @@ export class PaystackClient {
     }>;
 
     if (!response.ok || !body.status) {
-      throw new InternalServerErrorException(
-        body.message || 'Paystack initialization failed.',
-      );
+      throw new InternalServerErrorException(body.message || 'Paystack initialization failed.');
     }
 
     return body.data;
@@ -59,9 +52,7 @@ export class PaystackClient {
     const body = (await response.json()) as PaystackResponse<Record<string, unknown>>;
 
     if (!response.ok || !body.status) {
-      throw new InternalServerErrorException(
-        body.message || 'Paystack verification failed.',
-      );
+      throw new InternalServerErrorException(body.message || 'Paystack verification failed.');
     }
 
     return body.data;

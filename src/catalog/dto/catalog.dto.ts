@@ -48,7 +48,10 @@ export class CreateProductDto {
   @IsBoolean()
   status?: boolean;
 
-  @ApiPropertyOptional({ example: ['https://res.cloudinary.com/demo/image/upload/coke.jpg'], type: [String] })
+  @ApiPropertyOptional({
+    example: ['https://res.cloudinary.com/demo/image/upload/coke.jpg'],
+    type: [String],
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

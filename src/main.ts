@@ -22,9 +22,7 @@ async function bootstrap(): Promise<void> {
 
   const logger = app.get(AppLoggerService);
   app.useLogger(logger);
-  app.useGlobalInterceptors(
-    app.get(RequestContextInterceptor),
-  );
+  app.useGlobalInterceptors(app.get(RequestContextInterceptor));
   const requestContext = app.get(RequestContextService);
 
   app.setGlobalPrefix('purse');
@@ -32,18 +30,25 @@ async function bootstrap(): Promise<void> {
     type: VersioningType.URI,
     defaultVersion: '1',
   });
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
-        fontSrc: ["'self'", "https:", "data:"],
-        imgSrc: ["'self'", "data:", "validator.swagger.io", "https://cdn.jsdelivr.net"],
-        connectSrc: ["'self'", "https://api.scalar.com", "https://cdn.jsdelivr.net"],
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+          styleSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            'https://fonts.googleapis.com',
+            'https://cdn.jsdelivr.net',
+          ],
+          fontSrc: ["'self'", 'https:', 'data:'],
+          imgSrc: ["'self'", 'data:', 'validator.swagger.io', 'https://cdn.jsdelivr.net'],
+          connectSrc: ["'self'", 'https://api.scalar.com', 'https://cdn.jsdelivr.net'],
+        },
       },
-    },
-  }));
+    }),
+  );
   app.use(compression());
   app.use(cookieParser());
   const allowedOrigins = (process.env.CORS_ORIGIN ?? '')

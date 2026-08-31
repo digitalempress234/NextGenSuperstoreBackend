@@ -41,17 +41,20 @@ export class DeliveryTrackingController {
 
   @Get(':id/location')
   @ApiOperation({ summary: 'Get the latest delivery GPS position.' })
-  @OkExample({ latitude: 6.5244, longitude: 3.3792, recordedAt: '2026-08-27T08:00:00.000Z' }, 'Latest location or null.')
-  current(
-    @CurrentUser('id') userId: number,
-    @Param('id', ParseIntPipe) deliveryId: number,
-  ) {
+  @OkExample(
+    { latitude: 6.5244, longitude: 3.3792, recordedAt: '2026-08-27T08:00:00.000Z' },
+    'Latest location or null.',
+  )
+  current(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) deliveryId: number) {
     return this.tracking.current(userId, deliveryId);
   }
 
   @Get(':id/locations')
   @ApiOperation({ summary: 'Get delivery location history.' })
-  @OkExample([{ latitude: 6.5244, longitude: 3.3792, recordedAt: '2026-08-27T08:00:00.000Z' }], 'Chronological location history, newest first.')
+  @OkExample(
+    [{ latitude: 6.5244, longitude: 3.3792, recordedAt: '2026-08-27T08:00:00.000Z' }],
+    'Chronological location history, newest first.',
+  )
   history(
     @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) deliveryId: number,

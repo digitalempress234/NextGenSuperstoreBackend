@@ -13,7 +13,7 @@ describe('Health endpoint', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    
+
     app.setGlobalPrefix('purse');
     app.enableVersioning({
       type: VersioningType.URI,

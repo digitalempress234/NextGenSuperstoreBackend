@@ -38,7 +38,9 @@ describe('Complete endpoint route coverage', () => {
       return;
     }
 
-    const expected = new Set(endpointCases.map((item) => `${item.method.toUpperCase()} ${base}${item.path}`));
+    const expected = new Set(
+      endpointCases.map((item) => `${item.method.toUpperCase()} ${base}${item.path}`),
+    );
 
     const document = SwaggerModule.createDocument(
       app,
@@ -54,7 +56,7 @@ describe('Complete endpoint route coverage', () => {
           : path.startsWith('/v1')
             ? `/purse${path}`
             : `${base}${path}`;
-        
+
         // Convert Swagger {id} or {productId} to 1 to match our endpointCases
         const withIdReplaced = normalizedPath.replace(/\{[^}]+\}/g, '1');
         actual.add(`${method.toUpperCase()} ${withIdReplaced}`);
@@ -69,33 +71,39 @@ describe('Complete endpoint route coverage', () => {
     expect(expected.size).toBe(actual.size);
   });
 
-  it.each(endpointCases)('$method $path is wired with the expected unauthenticated contract', async (item) => {
-    if (process.env.RUN_FULL_E2E !== 'true') {
-      return;
-    }
+  it.each(endpointCases)(
+    '$method $path is wired with the expected unauthenticated contract',
+    async (item) => {
+      if (process.env.RUN_FULL_E2E !== 'true') {
+        return;
+      }
 
-    let agent = request(app.getHttpServer())[item.method](base + item.path);
-    if (item.query) agent = agent.query(item.query);
-    if (item.body) agent = agent.send(item.body);
+      let agent = request(app.getHttpServer())[item.method](base + item.path);
+      if (item.query) agent = agent.query(item.query);
+      if (item.body) agent = agent.send(item.body);
 
-    const response = await agent;
-    const allowed = Array.isArray(item.expectedWithoutAuth) ? item.expectedWithoutAuth : [item.expectedWithoutAuth];
-    
-    // In strict CSRF environments, unauthenticated POST/PATCH/DELETE often return 403 Forbidden
-    const isCsrfBlocked = ['post', 'patch', 'delete', 'put'].includes(item.method) && response.status === 403;
-    
-    if (isCsrfBlocked) {
-      expect(response.status).toBe(403);
-    } else {
-      expect(allowed).toContain(response.status);
-    }
-    
-    const is404Allowed = Array.isArray(item.expectedWithoutAuth)
-      ? item.expectedWithoutAuth.includes(404)
-      : item.expectedWithoutAuth === 404;
-      
-    if (!is404Allowed) {
-      expect(response.status).not.toBe(404);
-    }
-  });
+      const response = await agent;
+      const allowed = Array.isArray(item.expectedWithoutAuth)
+        ? item.expectedWithoutAuth
+        : [item.expectedWithoutAuth];
+
+      // In strict CSRF environments, unauthenticated POST/PATCH/DELETE often return 403 Forbidden
+      const isCsrfBlocked =
+        ['post', 'patch', 'delete', 'put'].includes(item.method) && response.status === 403;
+
+      if (isCsrfBlocked) {
+        expect(response.status).toBe(403);
+      } else {
+        expect(allowed).toContain(response.status);
+      }
+
+      const is404Allowed = Array.isArray(item.expectedWithoutAuth)
+        ? item.expectedWithoutAuth.includes(404)
+        : item.expectedWithoutAuth === 404;
+
+      if (!is404Allowed) {
+        expect(response.status).not.toBe(404);
+      }
+    },
+  );
 });

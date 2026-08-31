@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { RoleName } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -61,8 +57,9 @@ export class RbacService {
         .map((override) => override.permission.key),
     );
 
-    const permissions = [...new Set([...rolePermissions, ...grantedOverrides])]
-      .filter((permission) => !deniedOverrides.has(permission));
+    const permissions = [...new Set([...rolePermissions, ...grantedOverrides])].filter(
+      (permission) => !deniedOverrides.has(permission),
+    );
 
     return {
       id: user.id,

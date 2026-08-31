@@ -34,7 +34,10 @@ export class MailService {
     data: EmailTemplateData,
     userId?: number,
   ): Promise<void> {
-    const rendered = templates[templateKey]({ ...data, appName: data.appName ?? this.appName } as any);
+    const rendered = templates[templateKey]({
+      ...data,
+      appName: data.appName ?? this.appName,
+    } as any);
     const log = await this.prisma.emailLog.create({
       data: {
         userId,

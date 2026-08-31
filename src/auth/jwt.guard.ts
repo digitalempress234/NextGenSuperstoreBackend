@@ -1,9 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
@@ -58,10 +53,7 @@ export class JwtGuard implements CanActivate {
           where: { id: payload.sid },
         });
 
-        if (
-          session &&
-          (session.revokedAt || session.expiresAt <= new Date())
-        ) {
+        if (session && (session.revokedAt || session.expiresAt <= new Date())) {
           throw new UnauthorizedException('Session has expired or been revoked.');
         }
 

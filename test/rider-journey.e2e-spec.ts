@@ -19,7 +19,10 @@ describe('Rider Journey E2E', () => {
   let riderProfileId: number;
 
   beforeAll(async () => {
-    app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'debug', 'log'], rawBody: true });
+    app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'debug', 'log'],
+      rawBody: true,
+    });
 
     app.setGlobalPrefix('purse');
     app.enableVersioning({
@@ -29,9 +32,9 @@ describe('Rider Journey E2E', () => {
     app.use(cookieParser());
 
     await app.init();
-    
+
     const passwordHash = await bcrypt.hash('Password123!', 10);
-    
+
     // Create Admin user
     const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@superstore.com';
     let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -95,7 +98,7 @@ describe('Rider Journey E2E', () => {
       .expect(201);
     adminCookie = getCookie(res, 'purse_access_token');
   });
-  
+
   it('rider login', async () => {
     const r = await prisma.user.findUnique({ where: { id: riderId } });
     const loginRes = await req('post', '/purse/v1/auth/login')
@@ -119,7 +122,7 @@ describe('Rider Journey E2E', () => {
         emergencyContactPhone: '+2348000000000',
       })
       .expect(201);
-      
+
     riderProfileId = res.body.id;
   });
 
@@ -129,7 +132,7 @@ describe('Rider Journey E2E', () => {
       .send({
         type: 'NIN',
         documentNumber: '12345678901',
-        url: 'https://test.com/nin.jpg'
+        url: 'https://test.com/nin.jpg',
       })
       .expect(201);
   });
@@ -144,7 +147,7 @@ describe('Rider Journey E2E', () => {
         year: 2018,
         plateNumber: 'ABC123XY',
         color: 'Black',
-        ownershipType: 'OWNED'
+        ownershipType: 'OWNED',
       })
       .expect(201);
   });
@@ -174,9 +177,7 @@ describe('Rider Journey E2E', () => {
   });
 
   it('rider submits application', async () => {
-    await req('post', '/purse/v1/riders/submit')
-      .set('Cookie', riderCookie)
-      .expect(201);
+    await req('post', '/purse/v1/riders/submit').set('Cookie', riderCookie).expect(201);
   });
 
   it('admin approves rider', async () => {
@@ -187,15 +188,10 @@ describe('Rider Journey E2E', () => {
   });
 
   it('rider fetches their deliveries overview', async () => {
-    await req('get', '/purse/v1/deliveries/overview')
-      .set('Cookie', riderCookie)
-      .expect(200);
+    await req('get', '/purse/v1/deliveries/overview').set('Cookie', riderCookie).expect(200);
   });
 
   it('rider fetches offers', async () => {
-    await req('get', '/purse/v1/deliveries/offers')
-      .set('Cookie', riderCookie)
-      .expect(200);
+    await req('get', '/purse/v1/deliveries/offers').set('Cookie', riderCookie).expect(200);
   });
-
 });

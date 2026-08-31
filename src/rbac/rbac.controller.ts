@@ -1,27 +1,11 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  ParseIntPipe,
-  Post,
-} from '@nestjs/common';
-import {
-  ApiCookieAuth,
-  ApiOperation,
-  ApiParam,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
 import { RbacService } from './rbac.service';
-import {
-  AssignRoleDto,
-  PermissionOverrideDto,
-} from './dto/rbac.dto';
+import { AssignRoleDto, PermissionOverrideDto } from './dto/rbac.dto';
 
 @ApiTags('RBAC')
 @ApiCookieAuth('purse_access_token')
@@ -68,10 +52,7 @@ export class RbacController {
   @ApiOperation({ summary: 'Assign a role to a user' })
   @OkExample({ userId: 101, role: 'OPERATIONS_ADMIN', expiresAt: null })
   @StandardErrors()
-  assignRole(
-    @CurrentUser('id') actorId: number,
-    @Body() dto: AssignRoleDto,
-  ) {
+  assignRole(@CurrentUser('id') actorId: number, @Body() dto: AssignRoleDto) {
     return this.rbac.assignRole(actorId, dto);
   }
 
@@ -103,10 +84,7 @@ export class RbacController {
     expiresAt: '2026-12-31T23:59:59.000Z',
   })
   @StandardErrors()
-  createOverride(
-    @CurrentUser('id') actorId: number,
-    @Body() dto: PermissionOverrideDto,
-  ) {
+  createOverride(@CurrentUser('id') actorId: number, @Body() dto: PermissionOverrideDto) {
     return this.rbac.createOverride(actorId, dto);
   }
 }

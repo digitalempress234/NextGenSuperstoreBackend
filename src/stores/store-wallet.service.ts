@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -80,9 +76,7 @@ export class StoreWalletService {
     }
 
     if (dto.amount > available) {
-      throw new BadRequestException(
-        `Insufficient balance. Available: ₦${available.toFixed(2)}.`,
-      );
+      throw new BadRequestException(`Insufficient balance. Available: ₦${available.toFixed(2)}.`);
     }
 
     const ref = `SW-${storeId}-${Date.now()}`;
@@ -163,7 +157,9 @@ export class StoreWalletService {
       where: { storeId },
     });
     if (!wallet) {
-      throw new BadRequestException('This store does not have a wallet yet. Complete an order first.');
+      throw new BadRequestException(
+        'This store does not have a wallet yet. Complete an order first.',
+      );
     }
     return wallet;
   }

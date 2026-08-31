@@ -1,6 +1,13 @@
 import { Body, Controller, Headers, Post, Req, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ApiBody, ApiCookieAuth, ApiConsumes, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiCookieAuth,
+  ApiConsumes,
+  ApiHeader,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { Request } from 'express';
 
@@ -32,17 +39,16 @@ export class PaymentsController {
     },
   })
   @StandardErrors()
-  initialize(
-    @CurrentUser('id') userId: number,
-    @Body() dto: InitializePaymentDto,
-  ) {
+  initialize(@CurrentUser('id') userId: number, @Body() dto: InitializePaymentDto) {
     return this.paymentsService.initialize(userId, dto.paymentGroupId);
   }
 
   @Public()
   @SkipCsrf()
   @Post('paystack/webhook')
-  @ApiOperation({ summary: 'Paystack webhook endpoint; authenticates the x-paystack-signature header' })
+  @ApiOperation({
+    summary: 'Paystack webhook endpoint; authenticates the x-paystack-signature header',
+  })
   @ApiHeader({ name: 'x-paystack-signature', required: true, example: '0f5b...' })
   @ApiBody({
     schema: {
@@ -68,10 +74,7 @@ export class PaymentsController {
       throw new UnauthorizedException('Invalid webhook request.');
     }
 
-    const expected = createHmac(
-      'sha512',
-      this.config.getOrThrow<string>('PAYSTACK_SECRET_KEY'),
-    )
+    const expected = createHmac('sha512', this.config.getOrThrow<string>('PAYSTACK_SECRET_KEY'))
       .update(request.rawBody)
       .digest('hex');
 

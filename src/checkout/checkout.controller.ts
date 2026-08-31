@@ -43,10 +43,7 @@ export class CheckoutController {
     ],
   })
   @StandardErrors()
-  create(
-    @CurrentUser('id') userId: number,
-    @Body() dto: CreateCheckoutDto,
-  ) {
+  create(@CurrentUser('id') userId: number, @Body() dto: CreateCheckoutDto) {
     return this.checkoutService.create(userId, dto);
   }
 }

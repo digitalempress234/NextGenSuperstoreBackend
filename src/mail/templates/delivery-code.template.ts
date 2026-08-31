@@ -6,9 +6,7 @@ export interface DeliveryCodeTemplateData extends EmailTemplateData {
   expiresInMinutes: number;
 }
 
-export function deliveryCodeEmail(
-  data: DeliveryCodeTemplateData,
-): RenderedEmail {
+export function deliveryCodeEmail(data: DeliveryCodeTemplateData): RenderedEmail {
   const subject = `Your delivery code for order ${data.orderNumber}`;
 
   const text = [

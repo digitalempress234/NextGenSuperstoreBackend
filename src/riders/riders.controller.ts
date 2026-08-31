@@ -25,23 +25,46 @@ export class RidersController {
     private readonly ridersService: RidersService,
     private readonly banks: BankResolverService,
     private readonly riderWallet: RiderWalletService,
-  ) { }
+  ) {}
 
   @Get('onboarding/requirements')
   @ApiOperation({ summary: 'Get rider onboarding document requirements and field guidance' })
   @OkExample({
     message: 'Your Account is Under Review',
     requiredDocuments: [
-      { type: 'NIN', description: 'National Identification Number slip/card or another approved government-issued ID.' },
+      {
+        type: 'NIN',
+        description:
+          'National Identification Number slip/card or another approved government-issued ID.',
+      },
       { type: 'PASSPORT_PHOTO', description: 'Recent passport-style profile photograph.' },
-      { type: 'LIVENESS', description: 'Live selfie/liveness verification completed through the supported verification flow.' },
-      { type: 'DRIVERS_LICENSE', description: 'Valid rider/motorcycle or applicable driving licence.' },
-      { type: 'VEHICLE_REGISTRATION', description: 'Current vehicle registration document for the motorcycle/vehicle being used.' },
-      { type: 'PROOF_OF_OWNERSHIP_OR_PERMISSION', description: 'Proof of ownership or written authorization to use the vehicle.' },
+      {
+        type: 'LIVENESS',
+        description:
+          'Live selfie/liveness verification completed through the supported verification flow.',
+      },
+      {
+        type: 'DRIVERS_LICENSE',
+        description: 'Valid rider/motorcycle or applicable driving licence.',
+      },
+      {
+        type: 'VEHICLE_REGISTRATION',
+        description: 'Current vehicle registration document for the motorcycle/vehicle being used.',
+      },
+      {
+        type: 'PROOF_OF_OWNERSHIP_OR_PERMISSION',
+        description: 'Proof of ownership or written authorization to use the vehicle.',
+      },
       { type: 'VEHICLE_LICENSE', description: 'Current vehicle licence.' },
       { type: 'INSURANCE', description: 'Valid insurance certificate where applicable.' },
-      { type: 'ROADWORTHINESS_CERTIFICATE', description: 'Current roadworthiness certificate where applicable.' },
-      { type: 'VEHICLE_PHOTO', description: 'Clear photographs of the motorcycle/vehicle and plate number.' },
+      {
+        type: 'ROADWORTHINESS_CERTIFICATE',
+        description: 'Current roadworthiness certificate where applicable.',
+      },
+      {
+        type: 'VEHICLE_PHOTO',
+        description: 'Clear photographs of the motorcycle/vehicle and plate number.',
+      },
       { type: 'GUARANTOR_ID', description: 'Government-issued identification for the guarantor.' },
     ],
     profileMessage: 'Your Account is Under Review',
@@ -60,7 +83,9 @@ export class RidersController {
   }
 
   @Post('bank-accounts/resolve')
-  @ApiOperation({ summary: 'Resolve rider bank account automatically before saving payout details' })
+  @ApiOperation({
+    summary: 'Resolve rider bank account automatically before saving payout details',
+  })
   @OkExample({ accountNumber: '0123456789', accountName: 'Tony Stark', bankId: 9 })
   @StandardErrors()
   resolveBankAccount(@Body() dto: CreateBankAccountDto) {
@@ -70,7 +95,9 @@ export class RidersController {
   @Get('me')
   @ApiOperation({ summary: 'Get the current rider onboarding profile and related KYC data' })
   @OkExample({
-    id: 50, userId: 1001, onboardingStatus: 'UNDER_REVIEW',
+    id: 50,
+    userId: 1001,
+    onboardingStatus: 'UNDER_REVIEW',
     documents: [{ type: 'NIN', status: 'PENDING' }],
     vehicles: [{ plateNumber: 'LAG-123-XY', status: 'PENDING' }],
     bankAccounts: [{ bankName: 'GTBank', verificationStatus: 'PENDING' }],
@@ -107,7 +134,12 @@ export class RidersController {
 
   @Post('bank-accounts')
   @ApiOperation({ summary: 'Add a rider payout bank account' })
-  @OkExample({ id: 30, bankName: 'GTBank', accountName: 'Tony Stark', verificationStatus: 'PENDING' })
+  @OkExample({
+    id: 30,
+    bankName: 'GTBank',
+    accountName: 'Tony Stark',
+    verificationStatus: 'PENDING',
+  })
   @StandardErrors()
   addBankAccount(@CurrentUser('id') userId: number, @Body() dto: CreateBankAccountDto) {
     return this.ridersService.addBankAccount(userId, dto);
@@ -123,7 +155,12 @@ export class RidersController {
 
   @Post('submit')
   @ApiOperation({ summary: 'Submit completed rider onboarding for review' })
-  @OkExample({ id: 50, onboardingStatus: 'UNDER_REVIEW', statusMessage: 'Your Account is Under Review', canSubmit: false })
+  @OkExample({
+    id: 50,
+    onboardingStatus: 'UNDER_REVIEW',
+    statusMessage: 'Your Account is Under Review',
+    canSubmit: false,
+  })
   @StandardErrors()
   submitForReview(@CurrentUser('id') userId: number) {
     return this.ridersService.submitForReview(userId);
@@ -134,9 +171,13 @@ export class RidersController {
   @Post('kyc/session')
   @ApiOperation({
     summary: 'Mint a QoreID SDK session token for liveness verification',
-    description: 'Backend-only call to QoreID. Returns only the sdkSessionToken — credentials never reach the client.',
+    description:
+      'Backend-only call to QoreID. Returns only the sdkSessionToken — credentials never reach the client.',
   })
-  @OkExample({ sdkSessionToken: '<JWT handed to the mobile SDK>', expiresAt: '2026-09-01T10:00:00.000Z' })
+  @OkExample({
+    sdkSessionToken: '<JWT handed to the mobile SDK>',
+    expiresAt: '2026-09-01T10:00:00.000Z',
+  })
   @StandardErrors()
   mintKycSession(@CurrentUser('id') userId: number, @Body() dto: MintKycSessionDto) {
     return this.ridersService.mintKycSession(userId, dto);
@@ -145,9 +186,16 @@ export class RidersController {
   @Post('kyc/verify-document')
   @ApiOperation({
     summary: 'Trigger automated QoreID identity verification for a rider document',
-    description: 'Calls the appropriate QoreID endpoint based on document type. Optionally runs a face-match if selfieBase64 is provided.',
+    description:
+      'Calls the appropriate QoreID endpoint based on document type. Optionally runs a face-match if selfieBase64 is provided.',
   })
-  @OkExample({ id: 10, type: 'NIN', status: 'APPROVED', qoreidStatus: 'VERIFIED', faceMatchScore: 97.4 })
+  @OkExample({
+    id: 10,
+    type: 'NIN',
+    status: 'APPROVED',
+    qoreidStatus: 'VERIFIED',
+    faceMatchScore: 97.4,
+  })
   @StandardErrors()
   verifyRiderDocument(@CurrentUser('id') userId: number, @Body() dto: VerifyRiderDocumentDto) {
     return this.ridersService.verifyRiderDocument(userId, dto);
@@ -160,7 +208,10 @@ export class RidersController {
   })
   @OkExample({ id: 5, type: 'NIN', status: 'APPROVED', qoreidStatus: 'VERIFIED' })
   @StandardErrors()
-  verifyGuarantorDocument(@CurrentUser('id') userId: number, @Body() dto: VerifyGuarantorDocumentDto) {
+  verifyGuarantorDocument(
+    @CurrentUser('id') userId: number,
+    @Body() dto: VerifyGuarantorDocumentDto,
+  ) {
     return this.ridersService.verifyGuarantorDocument(userId, dto);
   }
 
@@ -191,7 +242,8 @@ export class RidersController {
   @Post('wallet/withdraw')
   @ApiOperation({
     summary: "Request a withdrawal to the rider's primary bank account",
-    description: 'MANUAL mode creates a pending request for admin processing. AUTO mode triggers an immediate Paystack transfer.',
+    description:
+      'MANUAL mode creates a pending request for admin processing. AUTO mode triggers an immediate Paystack transfer.',
   })
   @OkExample({ id: 1, amount: 5000, status: 'PENDING', mode: 'MANUAL', bankName: 'GTBank' })
   @StandardErrors()

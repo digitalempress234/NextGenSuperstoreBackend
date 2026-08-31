@@ -27,7 +27,9 @@ export class ReviewsService {
     });
 
     if (!purchase) {
-      throw new BadRequestException('Only customers with a completed purchase can review this product.');
+      throw new BadRequestException(
+        'Only customers with a completed purchase can review this product.',
+      );
     }
 
     return this.prisma.review.create({

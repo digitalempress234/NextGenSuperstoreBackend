@@ -107,8 +107,7 @@ export class SubmitCacDto {
   })
   @IsString()
   @Matches(/^(RC|BN|IT)\d+$/i, {
-    message:
-      'regNumber must start with RC, BN, or IT followed by digits (e.g. RC123456).',
+    message: 'regNumber must start with RC, BN, or IT followed by digits (e.g. RC123456).',
   })
   regNumber!: string;
 }

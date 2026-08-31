@@ -2,7 +2,11 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdateVendorProfileDto {
-  @ApiProperty({ example: '+2348012345678', description: 'Vendor contact phone number', required: false })
+  @ApiProperty({
+    example: '+2348012345678',
+    description: 'Vendor contact phone number',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)

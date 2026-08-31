@@ -28,16 +28,22 @@ export function setupScalarDocs(app: INestApplication) {
     .setTitle('Purse Superstore API')
     .setVersion('1.0.0')
     .setContact('Purse Engineering', 'https://api.syroltech.com/purse', 'support@syroltech.com')
-    .addCookieAuth('purse_access_token', {
-      type: 'apiKey',
-      in: 'cookie',
-      description: 'HttpOnly secure authentication cookie.',
-    }, 'purse_access_token')
+    .addCookieAuth(
+      'purse_access_token',
+      {
+        type: 'apiKey',
+        in: 'cookie',
+        description: 'HttpOnly secure authentication cookie.',
+      },
+      'purse_access_token',
+    )
     .addServer('https://api.syroltech.com/purse', 'Production')
     .addServer('http://localhost:3000/purse', 'Local development');
 
   // 1. Admin API
-  const adminConfig = baseConfig.setDescription('API for Administrators and Support Staff.').build();
+  const adminConfig = baseConfig
+    .setDescription('API for Administrators and Support Staff.')
+    .build();
   const adminDocument = SwaggerModule.createDocument(app, adminConfig, {
     include: [AdminModule, ApprovalsModule, AuditModule, RbacModule, HealthModule],
   });
@@ -115,7 +121,9 @@ export function setupScalarDocs(app: INestApplication) {
   });
 
   // 5. Full API (Swagger only, backward compatibility)
-  const fullConfig = baseConfig.setDescription('Full REST API for the Purse multi-store marketplace.').build();
+  const fullConfig = baseConfig
+    .setDescription('Full REST API for the Purse multi-store marketplace.')
+    .build();
   const fullDocument = SwaggerModule.createDocument(app, fullConfig);
   SwaggerModule.setup('swagger', app, fullDocument, {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },

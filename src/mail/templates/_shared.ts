@@ -22,11 +22,7 @@ export const escapeHtml = (value: unknown): string =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 
-export const layout = (
-  title: string,
-  body: string,
-  appName?: string,
-): string => `
+export const layout = (title: string, body: string, appName?: string): string => `
 <!doctype html>
 <html lang="en">
 <head>

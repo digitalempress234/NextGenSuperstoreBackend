@@ -20,6 +20,9 @@ describe('DeliveryTrackingGateway', () => {
     });
 
     expect(gateway.server.to).toHaveBeenCalledWith('delivery:12');
-    expect(emit).toHaveBeenCalledWith('delivery.location.updated', expect.objectContaining({ deliveryId: 12 }));
+    expect(emit).toHaveBeenCalledWith(
+      'delivery.location.updated',
+      expect.objectContaining({ deliveryId: 12 }),
+    );
   });
 });

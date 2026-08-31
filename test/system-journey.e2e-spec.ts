@@ -28,7 +28,10 @@ describe('System Journey E2E', () => {
   let paymentReference: string;
 
   beforeAll(async () => {
-    app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'debug', 'log'], rawBody: true });
+    app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'debug', 'log'],
+      rawBody: true,
+    });
 
     app.setGlobalPrefix('purse');
     app.enableVersioning({
@@ -38,9 +41,9 @@ describe('System Journey E2E', () => {
     app.use(cookieParser());
 
     await app.init();
-    
+
     const passwordHash = await bcrypt.hash('Password123!', 10);
-    
+
     // Create Admin user
     const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@superstore.com';
     let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -74,7 +77,7 @@ describe('System Journey E2E', () => {
       },
     });
     vendorId = vendor.id;
-    
+
     const customer = await prisma.user.create({
       data: {
         email: `cobodoukwu+customer${Date.now()}@gmail.com`,
@@ -125,7 +128,7 @@ describe('System Journey E2E', () => {
       adminCookie = getCookie(res, 'purse_access_token');
       expect(adminCookie).toBeTruthy();
     });
-    
+
     it('should login as vendor', async () => {
       const v = await prisma.user.findUnique({ where: { id: vendorId } });
       const loginRes = await req('post', '/purse/v1/auth/login')
@@ -171,7 +174,7 @@ describe('System Journey E2E', () => {
           address: '123 Test Ave',
         })
         .expect(201);
-      
+
       storeId = res.body.id;
     });
 
@@ -244,7 +247,7 @@ describe('System Journey E2E', () => {
           deliveryFee: 1500,
         })
         .expect(201);
-      
+
       const paymentGroup = res.body.paymentGroup;
       paymentGroupId = paymentGroup.id;
     });
@@ -256,7 +259,7 @@ describe('System Journey E2E', () => {
           paymentGroupId,
         })
         .expect(201);
-      
+
       paymentReference = res.body.providerRef;
       expect(paymentReference).toBeTruthy();
     });
@@ -270,23 +273,27 @@ describe('System Journey E2E', () => {
       };
 
       const payloadString = JSON.stringify(payload);
-      const signature = createHmac('sha512', process.env.PAYSTACK_SECRET_KEY || 'sk_test_dce075554489808a4b88f2205d765253cfa4a3b8')
+      const signature = createHmac(
+        'sha512',
+        process.env.PAYSTACK_SECRET_KEY || 'sk_test_dce075554489808a4b88f2205d765253cfa4a3b8',
+      )
         .update(payloadString)
         .digest('hex');
 
       const res = await req('post', '/purse/v1/payments/paystack/webhook')
         .set('x-paystack-signature', signature)
         .set('Content-Type', 'application/json')
-        .send(payloadString) 
+        .send(payloadString)
         .expect(201);
-      
+
       expect(res.body.received).toBe(true);
-      
+
       await new Promise((resolve) => setTimeout(resolve, 500));
-      
-      const payment = await prisma.payment.findUnique({ where: { transactionRef: paymentReference } });
+
+      const payment = await prisma.payment.findUnique({
+        where: { transactionRef: paymentReference },
+      });
       expect(['FAILED', 'PENDING']).toContain(payment?.status);
     });
   });
-
 });

@@ -1,14 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsDateString,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateRiderProfileDto {
   @ApiPropertyOptional({ example: 'Ikeja / Allen Avenue' })
@@ -146,7 +138,8 @@ export class CreateBankAccountDto {
 
   @ApiPropertyOptional({
     example: 'GTBank',
-    description: 'Displayed for confirmation only. Backend resolves the official bank name from Paystack using bankCode.',
+    description:
+      'Displayed for confirmation only. Backend resolves the official bank name from Paystack using bankCode.',
   })
   @IsOptional()
   @IsString()
@@ -156,7 +149,11 @@ export class CreateBankAccountDto {
   @IsString()
   accountNumber!: string;
 
-  @ApiPropertyOptional({ example: 'Tony Stark', description: 'Optional on create; backend resolves it from Paystack before persisting when omitted.' })
+  @ApiPropertyOptional({
+    example: 'Tony Stark',
+    description:
+      'Optional on create; backend resolves it from Paystack before persisting when omitted.',
+  })
   @IsOptional()
   @IsString()
   accountName?: string;

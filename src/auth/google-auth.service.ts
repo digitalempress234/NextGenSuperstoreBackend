@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
 import { PrismaService } from '../prisma/prisma.service';
@@ -43,8 +40,7 @@ export class GoogleAuthService {
     }
 
     const issuerValid =
-      payload.iss === 'accounts.google.com' ||
-      payload.iss === 'https://accounts.google.com';
+      payload.iss === 'accounts.google.com' || payload.iss === 'https://accounts.google.com';
     const audienceValid = Array.isArray(payload.aud)
       ? payload.aud.includes(audience)
       : payload.aud === audience;
@@ -93,9 +89,7 @@ export class GoogleAuthService {
             lastName: payload.family_name,
             avatarUrl: payload.picture,
             isEmailVerified: true,
-            roles: customerRole
-              ? { create: [{ roleId: customerRole.id }] }
-              : undefined,
+            roles: customerRole ? { create: [{ roleId: customerRole.id }] } : undefined,
           },
           include: { oauthAccounts: true },
         });
@@ -116,9 +110,7 @@ export class GoogleAuthService {
         throw new UnauthorizedException('Account is not active.');
       }
 
-      const alreadyLinked = account.oauthAccounts.some(
-        (oauth) => oauth.provider === 'GOOGLE',
-      );
+      const alreadyLinked = account.oauthAccounts.some((oauth) => oauth.provider === 'GOOGLE');
 
       if (alreadyLinked) {
         return account;

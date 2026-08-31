@@ -34,7 +34,10 @@ function getCookieValue(header: string | undefined, key: string): string | undef
 @WebSocketGateway({
   namespace: '/delivery',
   cors: {
-    origin: (process.env.CORS_ORIGIN ?? '').split(',').map((item) => item.trim()).filter(Boolean),
+    origin: (process.env.CORS_ORIGIN ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
     credentials: true,
   },
   transports: ['websocket', 'polling'],
@@ -92,11 +95,7 @@ export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDi
     this.server.to(`delivery:${event.deliveryId}`).emit('delivery.location.updated', event);
   }
 
-  broadcastStatus(event: {
-    deliveryId: number;
-    status: string;
-    occurredAt: string;
-  }): void {
+  broadcastStatus(event: { deliveryId: number; status: string; occurredAt: string }): void {
     this.server.to(`delivery:${event.deliveryId}`).emit('delivery.status.updated', event);
   }
 

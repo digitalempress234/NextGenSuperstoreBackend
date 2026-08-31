@@ -26,7 +26,7 @@ describe('Wallets & Withdrawals Journey E2E', () => {
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.use(cookieParser());
     await app.init();
-    
+
     const passwordHash = await bcrypt.hash('Password123!', 10);
 
     // Rider setup
@@ -41,11 +41,15 @@ describe('Wallets & Withdrawals Journey E2E', () => {
     });
     riderId = rider.id;
     const rp = await prisma.riderProfile.create({ data: { userId: rider.id } });
-    
+
     // Add RIDER role
-    const riderRole = await prisma.role.upsert({ where: { name: 'RIDER' }, update: {}, create: { name: 'RIDER', description: 'Rider', level: 1 } });
+    const riderRole = await prisma.role.upsert({
+      where: { name: 'RIDER' },
+      update: {},
+      create: { name: 'RIDER', description: 'Rider', level: 1 },
+    });
     await prisma.userRole.create({ data: { userId: rider.id, roleId: riderRole.id } });
-    
+
     // Seed Rider Bank Account & Wallet
     await prisma.riderBankAccount.create({
       data: {
@@ -55,24 +59,24 @@ describe('Wallets & Withdrawals Journey E2E', () => {
         accountNumber: '1234567890',
         accountName: 'Wallet Rider',
         isPrimary: true,
-      }
+      },
     });
-    
+
     const rw = await prisma.wallet.create({
       data: {
         userId: rider.id,
-        balance: 50000.00,
-      }
+        balance: 50000.0,
+      },
     });
-    
+
     await prisma.walletTransaction.create({
       data: {
         walletId: rw.id,
-        amount: 50000.00,
+        amount: 50000.0,
         type: 'CREDIT',
         reference: `SEED-RIDER-${Date.now()}`,
-        description: 'Test SEED funds'
-      }
+        description: 'Test SEED funds',
+      },
     });
 
     // Store Owner setup
@@ -94,31 +98,35 @@ describe('Wallets & Withdrawals Journey E2E', () => {
         state: 'Lagos',
         address: '123 Wallet St',
         isActive: true,
-      }
+      },
     });
     storeId = store.id;
     await prisma.merchantScope.create({ data: { userId: storeOwnerId, storeId } });
-    
+
     // Add VENDOR role
-    const vendorRole = await prisma.role.upsert({ where: { name: 'VENDOR' }, update: {}, create: { name: 'VENDOR', description: 'Vendor', level: 1 } });
+    const vendorRole = await prisma.role.upsert({
+      where: { name: 'VENDOR' },
+      update: {},
+      create: { name: 'VENDOR', description: 'Vendor', level: 1 },
+    });
     await prisma.userRole.create({ data: { userId: storeOwnerId, roleId: vendorRole.id } });
 
     // Seed Store Wallet
     const sw = await prisma.storeWallet.create({
       data: {
         storeId,
-        balance: 100000.00,
-      }
+        balance: 100000.0,
+      },
     });
-    
+
     await prisma.storeWalletTransaction.create({
       data: {
         walletId: sw.id,
-        amount: 100000.00,
+        amount: 100000.0,
         type: 'CREDIT',
         reference: `SEED-STORE-${Date.now()}`,
-        description: 'Test SEED funds'
-      }
+        description: 'Test SEED funds',
+      },
     });
   });
 
@@ -140,18 +148,26 @@ describe('Wallets & Withdrawals Journey E2E', () => {
   };
 
   it('Logins', async () => {
-    const riderRes = await req('post', '/purse/v1/auth/login').send({ email: (await prisma.user.findUnique({ where: { id: riderId } }))!.email, password: 'Password123!' }).expect(201);
+    const riderRes = await req('post', '/purse/v1/auth/login')
+      .send({
+        email: (await prisma.user.findUnique({ where: { id: riderId } }))!.email,
+        password: 'Password123!',
+      })
+      .expect(201);
     riderCookie = getCookie(riderRes, 'purse_access_token');
 
-    const storeRes = await req('post', '/purse/v1/auth/login').send({ email: (await prisma.user.findUnique({ where: { id: storeOwnerId } }))!.email, password: 'Password123!' }).expect(201);
+    const storeRes = await req('post', '/purse/v1/auth/login')
+      .send({
+        email: (await prisma.user.findUnique({ where: { id: storeOwnerId } }))!.email,
+        password: 'Password123!',
+      })
+      .expect(201);
     storeOwnerCookie = getCookie(storeRes, 'purse_access_token');
   });
 
   // --- RIDER WALLET ---
   it('Rider fetches wallet balance', async () => {
-    const res = await req('get', '/purse/v1/riders/wallet')
-      .set('Cookie', riderCookie)
-      .expect(200);
+    const res = await req('get', '/purse/v1/riders/wallet').set('Cookie', riderCookie).expect(200);
 
     expect(Number(res.body.balance)).toBe(50000);
   });
@@ -183,9 +199,11 @@ describe('Wallets & Withdrawals Journey E2E', () => {
 
     expect(res.body).toBeInstanceOf(Array);
     expect(Number(res.body[0].amount)).toBe(15000);
-    
+
     // Check balance was decremented
-    const balRes = await req('get', '/purse/v1/riders/wallet').set('Cookie', riderCookie).expect(200);
+    const balRes = await req('get', '/purse/v1/riders/wallet')
+      .set('Cookie', riderCookie)
+      .expect(200);
     expect(Number(balRes.body.balance)).toBe(35000);
   });
 
@@ -211,7 +229,13 @@ describe('Wallets & Withdrawals Journey E2E', () => {
   it('Store requests a withdrawal', async () => {
     const res = await req('post', `/purse/v1/stores/${storeId}/wallet/withdraw`)
       .set('Cookie', storeOwnerCookie)
-      .send({ amount: 20000, mode: 'AUTO', bankName: 'Test Bank', accountNumber: '0123456789', accountName: 'Test Store' })
+      .send({
+        amount: 20000,
+        mode: 'AUTO',
+        bankName: 'Test Bank',
+        accountNumber: '0123456789',
+        accountName: 'Test Store',
+      })
       .expect(201);
 
     expect(Number(res.body.amount)).toBe(20000);
@@ -225,9 +249,11 @@ describe('Wallets & Withdrawals Journey E2E', () => {
 
     expect(res.body).toBeInstanceOf(Array);
     expect(Number(res.body[0].amount)).toBe(20000);
-    
+
     // Check balance was decremented
-    const balRes = await req('get', `/purse/v1/stores/${storeId}/wallet`).set('Cookie', storeOwnerCookie).expect(200);
+    const balRes = await req('get', `/purse/v1/stores/${storeId}/wallet`)
+      .set('Cookie', storeOwnerCookie)
+      .expect(200);
     expect(Number(balRes.body.balance)).toBe(80000);
   });
 });

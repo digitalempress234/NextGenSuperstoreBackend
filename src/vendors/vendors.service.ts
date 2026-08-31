@@ -10,7 +10,7 @@ export class VendorsService {
     const profile = await this.prisma.vendorProfile.findUnique({
       where: { userId },
     });
-    
+
     return profile;
   }
 

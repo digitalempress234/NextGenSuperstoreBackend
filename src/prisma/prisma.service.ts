@@ -5,9 +5,7 @@ import { AppLoggerService } from '../logging/app-logger.service';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
-  constructor(
-    private readonly logger: AppLoggerService,
-  ) {
+  constructor(private readonly logger: AppLoggerService) {
     super({
       log:
         process.env.PRISMA_QUERY_LOGS === 'true'
@@ -23,11 +21,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     });
 
     (this as any).$on('error', (event: any) => {
-      this.logger.error(
-        'prisma.error',
-        event.message,
-        'Prisma',
-      );
+      this.logger.error('prisma.error', event.message, 'Prisma');
     });
 
     (this as any).$on('warn', (event: any) => {

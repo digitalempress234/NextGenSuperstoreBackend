@@ -10,7 +10,7 @@ import { UsersService } from './users.service';
 @ApiCookieAuth('purse_access_token')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   @Get('me')
   @ApiOperation({ summary: 'Get the authenticated user profile' })
@@ -28,15 +28,12 @@ export class UsersController {
   }
 
   @Get('me/access')
-  @ApiOperation({ summary: 'Get effective roles and permissions for the frontend access-control layer' })
+  @ApiOperation({
+    summary: 'Get effective roles and permissions for the frontend access-control layer',
+  })
   @OkExample({
     roles: ['CUSTOMER'],
-    permissions: [
-      'users.view',
-      'stores.view',
-      'products.view',
-      'orders.view',
-    ],
+    permissions: ['users.view', 'stores.view', 'products.view', 'orders.view'],
     merchantScopeIds: [],
     regionScopes: [],
   })

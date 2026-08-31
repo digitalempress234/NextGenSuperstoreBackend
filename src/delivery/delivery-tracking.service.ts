@@ -50,11 +50,7 @@ export class DeliveryTrackingService {
     throw new ForbiddenException('You cannot access this delivery tracking session.');
   }
 
-  async recordLocation(
-    riderId: number,
-    deliveryId: number,
-    input: UpdateDeliveryLocationDto,
-  ) {
+  async recordLocation(riderId: number, deliveryId: number, input: UpdateDeliveryLocationDto) {
     const delivery = await this.prisma.delivery.findUnique({
       where: { id: deliveryId },
       select: { id: true, riderId: true, status: true },
@@ -72,7 +68,9 @@ export class DeliveryTrackingService {
       throw new BadRequestException('Location updates are only accepted for an active delivery.');
     }
 
-    const rateLimitMs = Number(this.config.get<string>('DELIVERY_LOCATION_MIN_INTERVAL_MS', '1000'));
+    const rateLimitMs = Number(
+      this.config.get<string>('DELIVERY_LOCATION_MIN_INTERVAL_MS', '1000'),
+    );
     const rateKey = `delivery-location:${riderId}:${deliveryId}`;
     const acquired = await this.redis.client.set(rateKey, '1', 'PX', rateLimitMs, 'NX');
     if (!acquired) {

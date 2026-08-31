@@ -38,10 +38,7 @@ export class VendorsController {
     documentReviewStatus: 'PENDING',
   })
   @StandardErrors()
-  updateProfile(
-    @CurrentUser('id') userId: number,
-    @Body() dto: UpdateVendorProfileDto,
-  ) {
+  updateProfile(@CurrentUser('id') userId: number, @Body() dto: UpdateVendorProfileDto) {
     return this.vendorsService.updateProfile(userId, dto);
   }
 }

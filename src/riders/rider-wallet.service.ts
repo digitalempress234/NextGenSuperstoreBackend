@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -85,9 +81,7 @@ export class RiderWalletService {
     }
 
     if (dto.amount > available) {
-      throw new BadRequestException(
-        `Insufficient balance. Available: ₦${available.toFixed(2)}.`,
-      );
+      throw new BadRequestException(`Insufficient balance. Available: ₦${available.toFixed(2)}.`);
     }
 
     // Use the rider's primary bank account

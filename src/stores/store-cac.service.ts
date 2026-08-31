@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DocumentStatus, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -41,14 +36,10 @@ export class StoreCacService {
     });
 
     if (existing) {
-      throw new BadRequestException(
-        'This store already has an approved CAC verification.',
-      );
+      throw new BadRequestException('This store already has an approved CAC verification.');
     }
 
-    this.logger.log(
-      `Calling QoreID CAC Basic for store ${storeId} — regNumber: ${regNumber}`,
-    );
+    this.logger.log(`Calling QoreID CAC Basic for store ${storeId} — regNumber: ${regNumber}`);
 
     const extracted = await this.qoreid.verifyCac(regNumber);
 
@@ -57,12 +48,13 @@ export class StoreCacService {
       where: {
         // Use a unique index on storeId + regNumber (or storeId alone for 1-per-store)
         // We'll use storeId as the natural unique key since a store has one CAC
-        id: (
-          await this.prisma.storeCacVerification.findFirst({
-            where: { storeId },
-            select: { id: true },
-          })
-        )?.id ?? 0,
+        id:
+          (
+            await this.prisma.storeCacVerification.findFirst({
+              where: { storeId },
+              select: { id: true },
+            })
+          )?.id ?? 0,
       },
       create: {
         storeId,
@@ -143,8 +135,7 @@ export class StoreCacService {
       throw new BadRequestException('This verification is already approved.');
     }
 
-    const newStatus =
-      decision === 'APPROVED' ? DocumentStatus.APPROVED : DocumentStatus.REJECTED;
+    const newStatus = decision === 'APPROVED' ? DocumentStatus.APPROVED : DocumentStatus.REJECTED;
 
     const [updated] = await this.prisma.$transaction([
       this.prisma.storeCacVerification.update({

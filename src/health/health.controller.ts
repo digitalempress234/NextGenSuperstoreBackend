@@ -17,7 +17,10 @@ export class HealthController {
 
   @Public()
   @Get()
-  @OkExample({ status: 'ok', service: 'purse-api', timestamp: '2026-08-27T00:00:00.000Z' }, 'Health check passed')
+  @OkExample(
+    { status: 'ok', service: 'purse-api', timestamp: '2026-08-27T00:00:00.000Z' },
+    'Health check passed',
+  )
   async check() {
     await this.prisma.$queryRaw`SELECT 1`;
     await this.redis.client.ping();

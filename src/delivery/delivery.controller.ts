@@ -25,7 +25,10 @@ export class DeliveryController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('deliveries.view')
   @ApiOperation({ summary: 'Get overview statistics for the current rider' })
-  @OkExample({ totalDeliveries: 45, completedDeliveries: 40, failedDeliveries: 2, pendingDeliveries: 3 }, 'Rider overview statistics')
+  @OkExample(
+    { totalDeliveries: 45, completedDeliveries: 40, failedDeliveries: 2, pendingDeliveries: 3 },
+    'Rider overview statistics',
+  )
   overview(@CurrentUser('id') riderId: number) {
     return this.deliveryService.overview(riderId);
   }
@@ -42,17 +45,23 @@ export class DeliveryController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('deliveries.status.update')
   @OkExample({ id: 1, orderId: 11, status: 'ACCEPTED' }, 'Offer accepted successfully')
-  accept(
-    @CurrentUser('id') riderId: number,
-    @Param('id', ParseIntPipe) offerId: number,
-  ) {
+  accept(@CurrentUser('id') riderId: number, @Param('id', ParseIntPipe) offerId: number) {
     return this.deliveryService.accept(riderId, offerId);
   }
 
   @Patch(':id/status')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('deliveries.status.update')
-  @ApiBody({ schema: { type: 'object', properties: { status: { type: 'string', example: 'IN_TRANSIT' }, location: { type: 'string', example: 'Downtown' }, note: { type: 'string', example: 'Heavy traffic' } } } })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', example: 'IN_TRANSIT' },
+        location: { type: 'string', example: 'Downtown' },
+        note: { type: 'string', example: 'Heavy traffic' },
+      },
+    },
+  })
   @OkExample({ id: 1, status: 'IN_TRANSIT' }, 'Delivery status updated')
   status(
     @CurrentUser('id') riderId: number,

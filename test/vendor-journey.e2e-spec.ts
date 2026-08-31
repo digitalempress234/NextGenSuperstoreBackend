@@ -21,7 +21,10 @@ describe('Vendor Journey E2E', () => {
   let orderId: number;
 
   beforeAll(async () => {
-    app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'debug', 'log'], rawBody: true });
+    app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'debug', 'log'],
+      rawBody: true,
+    });
 
     app.setGlobalPrefix('purse');
     app.enableVersioning({
@@ -31,9 +34,9 @@ describe('Vendor Journey E2E', () => {
     app.use(cookieParser());
 
     await app.init();
-    
+
     const passwordHash = await bcrypt.hash('Password123!', 10);
-    
+
     // Create Admin user
     const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@superstore.com';
     let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
@@ -97,7 +100,7 @@ describe('Vendor Journey E2E', () => {
       .expect(201);
     adminCookie = getCookie(res, 'purse_access_token');
   });
-  
+
   it('vendor login', async () => {
     const v = await prisma.user.findUnique({ where: { id: vendorId } });
     const loginRes = await req('post', '/purse/v1/auth/login')
@@ -138,7 +141,7 @@ describe('Vendor Journey E2E', () => {
         address: '123 Vendor Ave',
       })
       .expect(201);
-    
+
     storeId = res.body.id;
   });
 
@@ -155,15 +158,13 @@ describe('Vendor Journey E2E', () => {
     const res = await req('get', `/purse/v1/stores/${storeId}/overview`)
       .set('Cookie', vendorCookie)
       .expect(200);
-    
+
     expect(res.body.totalOrders).toBeDefined();
   });
 
   it('vendor fetches orders', async () => {
-    const res = await req('get', '/purse/v1/orders')
-      .set('Cookie', vendorCookie)
-      .expect(200);
-    
+    const res = await req('get', '/purse/v1/orders').set('Cookie', vendorCookie).expect(200);
+
     expect(Array.isArray(res.body)).toBe(true);
   });
 });

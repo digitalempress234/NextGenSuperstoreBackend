@@ -47,12 +47,15 @@ export class DeliveryService {
   }
 
   async overview(riderId: number) {
-    const [totalDeliveries, completedDeliveries, failedDeliveries, pendingDeliveries] = await Promise.all([
-      this.prisma.delivery.count({ where: { riderId } }),
-      this.prisma.delivery.count({ where: { riderId, status: 'DELIVERED' } }),
-      this.prisma.delivery.count({ where: { riderId, status: { in: ['FAILED', 'CANCELLED'] } } }),
-      this.prisma.delivery.count({ where: { riderId, status: { notIn: ['DELIVERED', 'FAILED', 'CANCELLED'] } } }),
-    ]);
+    const [totalDeliveries, completedDeliveries, failedDeliveries, pendingDeliveries] =
+      await Promise.all([
+        this.prisma.delivery.count({ where: { riderId } }),
+        this.prisma.delivery.count({ where: { riderId, status: 'DELIVERED' } }),
+        this.prisma.delivery.count({ where: { riderId, status: { in: ['FAILED', 'CANCELLED'] } } }),
+        this.prisma.delivery.count({
+          where: { riderId, status: { notIn: ['DELIVERED', 'FAILED', 'CANCELLED'] } },
+        }),
+      ]);
 
     return {
       totalDeliveries,
@@ -159,9 +162,7 @@ export class DeliveryService {
     }
 
     if (!allowedTransitions[delivery.status].includes(status)) {
-      throw new BadRequestException(
-        `Invalid delivery transition: ${delivery.status} -> ${status}`,
-      );
+      throw new BadRequestException(`Invalid delivery transition: ${delivery.status} -> ${status}`);
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -174,12 +175,12 @@ export class DeliveryService {
       }
 
       this.trackingGateway.broadcastStatus({
-      deliveryId,
-      status,
-      occurredAt: new Date().toISOString(),
-    });
+        deliveryId,
+        status,
+        occurredAt: new Date().toISOString(),
+      });
 
-    if (status === 'DELIVERED') {
+      if (status === 'DELIVERED') {
         data.deliveredAt = new Date();
       }
 

@@ -1,7 +1,4 @@
-import {
-  PrismaClient,
-  RoleName,
-} from '@prisma/client';
+import { PrismaClient, RoleName } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -63,13 +60,7 @@ const permissionDefinitions: Array<[string, string]> = [
 ];
 
 const rolePermissions: Record<RoleName, string[]> = {
-  CUSTOMER: [
-    'users.view',
-    'stores.view',
-    'products.view',
-    'orders.view',
-    'deliveries.view',
-  ],
+  CUSTOMER: ['users.view', 'stores.view', 'products.view', 'orders.view', 'deliveries.view'],
   VENDOR: [
     'stores.view',
     'stores.create',
@@ -82,12 +73,7 @@ const rolePermissions: Record<RoleName, string[]> = {
     'orders.view',
     'orders.status.update',
   ],
-  STORE_AGENT: [
-    'stores.view',
-    'products.view',
-    'orders.view',
-    'orders.status.update',
-  ],
+  STORE_AGENT: ['stores.view', 'products.view', 'orders.view', 'orders.status.update'],
   RIDER: [
     'users.view',
     'riders.view',

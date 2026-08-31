@@ -26,12 +26,12 @@ import {
   VerifyEmailOtpDto,
 } from './dto/auth.dto';
 
-
 type OtpPurpose = 'EMAIL_VERIFICATION' | 'PASSWORD_RESET';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService,
+  constructor(
+    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
     private readonly rbac: RbacService,
@@ -104,8 +104,15 @@ export class AuthService {
     }
 
     if (!user.isEmailVerified) {
-      await this.createAndSendOtp(user.id, email, 'EMAIL_VERIFICATION', user.firstName ?? undefined);
-      throw new UnauthorizedException('Email verification is required. A new verification code has been sent.');
+      await this.createAndSendOtp(
+        user.id,
+        email,
+        'EMAIL_VERIFICATION',
+        user.firstName ?? undefined,
+      );
+      throw new UnauthorizedException(
+        'Email verification is required. A new verification code has been sent.',
+      );
     }
 
     return this.issueTokens(user.id, user.email);
@@ -140,7 +147,12 @@ export class AuthService {
     }
 
     try {
-      await this.createAndSendOtp(user.id, email, 'EMAIL_VERIFICATION', user.firstName ?? undefined);
+      await this.createAndSendOtp(
+        user.id,
+        email,
+        'EMAIL_VERIFICATION',
+        user.firstName ?? undefined,
+      );
     } catch {
       // Do not reveal whether the account exists or whether a cooldown is active.
     }
@@ -198,12 +210,20 @@ export class AuthService {
 
   async refreshToken(refreshToken: string) {
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub: number; sid: number }>(refreshToken, {
-        secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      });
+      const payload = await this.jwtService.verifyAsync<{ sub: number; sid: number }>(
+        refreshToken,
+        {
+          secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        },
+      );
 
       const session = await this.prisma.adminSession.findUnique({ where: { id: payload.sid } });
-      if (!session || session.userId !== payload.sub || session.revokedAt || session.expiresAt <= new Date()) {
+      if (
+        !session ||
+        session.userId !== payload.sub ||
+        session.revokedAt ||
+        session.expiresAt <= new Date()
+      ) {
         throw new UnauthorizedException('Session has expired or been revoked.');
       }
 
@@ -304,7 +324,10 @@ export class AuthService {
     const cooldownKey = `otp:cooldown:${purpose}:${email}`;
     const cooldown = await this.redis.client.get(cooldownKey);
     if (cooldown) {
-      throw new HttpException('Please wait before requesting another OTP.', HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException(
+        'Please wait before requesting another OTP.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     // A user can have only one active OTP per purpose. Resend replaces it.
@@ -338,9 +361,7 @@ export class AuthService {
 
     await this.redis.client.set(cooldownKey, '1', 'EX', cooldownSeconds);
     const templateKey =
-      purpose === 'EMAIL_VERIFICATION'
-        ? 'emailVerificationOtp'
-        : 'passwordResetOtp';
+      purpose === 'EMAIL_VERIFICATION' ? 'emailVerificationOtp' : 'passwordResetOtp';
 
     try {
       await this.mail.sendTemplate(
@@ -378,7 +399,10 @@ export class AuthService {
     }
 
     if (challenge.attempts >= challenge.maxAttempts) {
-      throw new HttpException('OTP attempt limit reached. Request a new code.', HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException(
+        'OTP attempt limit reached. Request a new code.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const expectedHash = this.hashOtp(challenge.challengeKey, otp);

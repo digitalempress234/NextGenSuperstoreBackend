@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { Prisma } from '@prisma/client';
 
@@ -105,15 +101,9 @@ export class CartService {
     return this.recalculate(this.prisma, cart.id);
   }
 
-  async updateQuantity(
-    userId: number,
-    storeProductId: number,
-    quantity: number,
-  ) {
+  async updateQuantity(userId: number, storeProductId: number, quantity: number) {
     if (!Number.isInteger(quantity) || quantity < 1) {
-      throw new BadRequestException(
-        'Quantity must be a positive integer.',
-      );
+      throw new BadRequestException('Quantity must be a positive integer.');
     }
 
     const cart = await this.prisma.cart.findUnique({
@@ -140,28 +130,19 @@ export class CartService {
       throw new NotFoundException('Cart item not found.');
     }
 
-    if (
-      !item.storeProduct.isActive ||
-      !item.storeProduct.availability
-    ) {
-      throw new BadRequestException(
-        'This product is no longer available.',
-      );
+    if (!item.storeProduct.isActive || !item.storeProduct.availability) {
+      throw new BadRequestException('This product is no longer available.');
     }
 
     if (item.storeProduct.stockQuantity < quantity) {
-      throw new BadRequestException(
-        'Requested quantity is greater than available stock.',
-      );
+      throw new BadRequestException('Requested quantity is greater than available stock.');
     }
 
     await this.prisma.cartItem.update({
       where: { id: item.id },
       data: {
         quantity,
-        unitPrice:
-          item.storeProduct.discountPrice ??
-          item.storeProduct.price,
+        unitPrice: item.storeProduct.discountPrice ?? item.storeProduct.price,
       },
     });
 

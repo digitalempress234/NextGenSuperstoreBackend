@@ -1,20 +1,5 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  ParseIntPipe,
-  Post,
-  Query,
-} from '@nestjs/common';
-import {
-  ApiCookieAuth,
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../auth/public.decorator';
 import { CurrentUser } from '../common/current-user.decorator';
@@ -40,9 +25,7 @@ export class MarketplaceController {
       'Returns the categories, active stores, featured products and popular products used to build the marketplace landing page.',
   })
   @OkExample({
-    categories: [
-      { id: 4, name: 'Beverages', level: 0 },
-    ],
+    categories: [{ id: 4, name: 'Beverages', level: 0 }],
     stores: [
       {
         id: 10,
@@ -265,10 +248,7 @@ export class MarketplaceController {
     productId: 42,
   })
   @StandardErrors()
-  addWishlist(
-    @CurrentUser('id') userId: number,
-    @Body() dto: AddWishlistDto,
-  ) {
+  addWishlist(@CurrentUser('id') userId: number, @Body() dto: AddWishlistDto) {
     return this.marketplace.addWishlist(userId, dto);
   }
 
@@ -320,10 +300,7 @@ export class MarketplaceController {
     productId: 42,
   })
   @StandardErrors()
-  addCompare(
-    @CurrentUser('id') userId: number,
-    @Body() dto: AddCompareDto,
-  ) {
+  addCompare(@CurrentUser('id') userId: number, @Body() dto: AddCompareDto) {
     return this.marketplace.addCompare(userId, dto);
   }
 

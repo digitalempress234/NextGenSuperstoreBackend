@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -59,9 +56,7 @@ export class CheckoutService {
       grouped.set(storeId, storeItems);
     }
 
-    const deliveryFee = input.fulfillmentType === 'DELIVERY'
-      ? Number(input.deliveryFee ?? 0)
-      : 0;
+    const deliveryFee = input.fulfillmentType === 'DELIVERY' ? Number(input.deliveryFee ?? 0) : 0;
 
     const customer = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -103,9 +98,8 @@ export class CheckoutService {
             userId,
             storeId,
             fulfillmentType: input.fulfillmentType,
-            customerName: [customer.firstName, customer.lastName]
-              .filter(Boolean)
-              .join(' ') || customer.email,
+            customerName:
+              [customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email,
             customerEmail: customer.email,
             customerPhone: customer.phoneNumber,
             deliveryLabel: input.address?.label,

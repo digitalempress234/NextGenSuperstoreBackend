@@ -5,7 +5,12 @@ import { CurrentUser } from '../common/current-user.decorator';
 import { Public } from '../auth/public.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
-import { CreateStoreDto, SubmitCacDto, UpdateStoreDto, UpsertStoreProductDto } from './dto/store.dto';
+import {
+  CreateStoreDto,
+  SubmitCacDto,
+  UpdateStoreDto,
+  UpsertStoreProductDto,
+} from './dto/store.dto';
 import { StoreCacService } from './store-cac.service';
 import { StoreWalletService, StoreWithdrawDto } from './store-wallet.service';
 import { StoresService } from './stores.service';
@@ -52,12 +57,12 @@ export class StoresController {
   @RequirePermissions('stores.view')
   @ApiOperation({ summary: 'Get overview statistics for a specific store' })
   @ApiParam({ name: 'id', example: 10 })
-  @OkExample({ totalOrders: 150, pendingOrders: 5, totalRevenue: 125000.5, totalProducts: 300 }, 'Store overview statistics')
+  @OkExample(
+    { totalOrders: 150, pendingOrders: 5, totalRevenue: 125000.5, totalProducts: 300 },
+    'Store overview statistics',
+  )
   @StandardErrors()
-  overview(
-    @CurrentUser('id') userId: number,
-    @Param('id', ParseIntPipe) storeId: number,
-  ) {
+  overview(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
     return this.storesService.overview(userId, storeId);
   }
 
@@ -72,10 +77,7 @@ export class StoresController {
     isActive: false,
   })
   @StandardErrors()
-  create(
-    @CurrentUser('id') userId: number,
-    @Body() dto: CreateStoreDto,
-  ) {
+  create(@CurrentUser('id') userId: number, @Body() dto: CreateStoreDto) {
     return this.storesService.create(userId, dto);
   }
 
@@ -128,7 +130,13 @@ export class StoresController {
       'The store will be activated automatically if QoreID returns VERIFIED and an admin approves.',
   })
   @ApiParam({ name: 'id', example: 10 })
-  @OkExample({ id: 1, storeId: 10, regNumber: 'RC123456', status: 'PENDING', qoreidStatus: 'VERIFIED' })
+  @OkExample({
+    id: 1,
+    storeId: 10,
+    regNumber: 'RC123456',
+    status: 'PENDING',
+    qoreidStatus: 'VERIFIED',
+  })
   @StandardErrors()
   submitCac(
     @CurrentUser('id') userId: number,
@@ -143,12 +151,15 @@ export class StoresController {
   @RequirePermissions('stores.view')
   @ApiOperation({ summary: 'Get CAC verification status for a store' })
   @ApiParam({ name: 'id', example: 10 })
-  @OkExample({ id: 1, regNumber: 'RC123456', status: 'PENDING', companyName: 'Purse Ltd', companyType: 'Private Limited' })
+  @OkExample({
+    id: 1,
+    regNumber: 'RC123456',
+    status: 'PENDING',
+    companyName: 'Purse Ltd',
+    companyType: 'Private Limited',
+  })
   @StandardErrors()
-  getCacStatus(
-    @CurrentUser('id') userId: number,
-    @Param('id', ParseIntPipe) storeId: number,
-  ) {
+  getCacStatus(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
     return this.storeCacService.getStatus(userId, storeId);
   }
 
@@ -161,10 +172,7 @@ export class StoresController {
   @ApiParam({ name: 'id', example: 10 })
   @OkExample({ balance: 74250, lockedBalance: 0 })
   @StandardErrors()
-  getWallet(
-    @CurrentUser('id') userId: number,
-    @Param('id', ParseIntPipe) storeId: number,
-  ) {
+  getWallet(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
     return this.storeWallet.getWallet(userId, storeId);
   }
 
@@ -191,7 +199,8 @@ export class StoresController {
   @RequirePermissions('stores.update')
   @ApiOperation({
     summary: 'Request a store wallet withdrawal',
-    description: 'MANUAL creates a pending request for admin to process. AUTO triggers an immediate Paystack transfer.',
+    description:
+      'MANUAL creates a pending request for admin to process. AUTO triggers an immediate Paystack transfer.',
   })
   @ApiParam({ name: 'id', example: 10 })
   @OkExample({ id: 1, amount: 50000, status: 'PENDING', mode: 'MANUAL', bankName: 'GTBank' })
@@ -211,10 +220,7 @@ export class StoresController {
   @ApiParam({ name: 'id', example: 10 })
   @OkExample([{ id: 1, amount: 50000, status: 'PAID', mode: 'MANUAL', bankName: 'GTBank' }])
   @StandardErrors()
-  getWithdrawals(
-    @CurrentUser('id') userId: number,
-    @Param('id', ParseIntPipe) storeId: number,
-  ) {
+  getWithdrawals(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
     return this.storeWallet.getWithdrawals(userId, storeId);
   }
 }

@@ -16,7 +16,16 @@ export class AdminController {
   @Get('overview')
   @RequirePermissions('reports.view')
   @ApiOperation({ summary: 'Get high-level statistics for the admin dashboard' })
-  @OkExample({ totalUsers: 500, totalStores: 25, totalOrders: 1500, totalRevenue: 500000.0, pendingApprovals: 3 }, 'Admin overview statistics')
+  @OkExample(
+    {
+      totalUsers: 500,
+      totalStores: 25,
+      totalOrders: 1500,
+      totalRevenue: 500000.0,
+      pendingApprovals: 3,
+    },
+    'Admin overview statistics',
+  )
   overview() {
     return this.adminService.overview();
   }
@@ -24,7 +33,9 @@ export class AdminController {
   @Get('riders/review')
   @RequirePermissions('kyc.read')
   @ApiOperation({ summary: 'List riders currently under KYC review' })
-  @OkExample([{ id: 50, onboardingStatus: 'UNDER_REVIEW', user: { id: 1001, email: 'rider@example.com' } }])
+  @OkExample([
+    { id: 50, onboardingStatus: 'UNDER_REVIEW', user: { id: 1001, email: 'rider@example.com' } },
+  ])
   @StandardErrors()
   listRidersForReview() {
     return this.adminService.listRidersForReview();
@@ -48,7 +59,11 @@ export class AdminController {
   @RequirePermissions('kyc.review')
   @ApiOperation({ summary: 'Reject rider onboarding with a reason' })
   @ApiParam({ name: 'id', example: 50 })
-  @OkExample({ id: 50, onboardingStatus: 'REJECTED', rejectionReason: 'Vehicle document is invalid.' })
+  @OkExample({
+    id: 50,
+    onboardingStatus: 'REJECTED',
+    rejectionReason: 'Vehicle document is invalid.',
+  })
   @StandardErrors()
   rejectRider(
     @Param('id', ParseIntPipe) riderId: number,

@@ -13,8 +13,6 @@ export class RequestIdInterceptor implements NestInterceptor {
     request.requestId = requestId;
     response.setHeader('x-request-id', requestId);
 
-    return next.handle().pipe(
-      tap(() => undefined),
-    );
+    return next.handle().pipe(tap(() => undefined));
   }
 }

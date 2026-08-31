@@ -33,21 +33,70 @@ export class RidersService {
     private readonly qoreid: QoreIDService,
   ) {}
 
-
   getOnboardingRequirements() {
     return {
       profileMessage: 'Your Account is Under Review',
       requirements: [
-        { key: 'identity', label: 'Identity / KYC', required: true, description: 'NIN/NIN slip or approved government-issued ID.' },
-        { key: 'profilePhoto', label: 'Passport/profile photograph', required: true, description: 'Recent clear profile photograph.' },
-        { key: 'liveness', label: 'Live selfie / liveness verification', required: true, description: 'Complete the supported liveness verification process.' },
-        { key: 'riderLicence', label: 'Rider/motorcycle licence', required: true, description: 'Valid rider or motorcycle licence where applicable.' },
-        { key: 'vehicleRegistration', label: 'Vehicle registration', required: true, description: 'Current registration and proof of lawful use.' },
-        { key: 'vehiclePhoto', label: 'Vehicle photo', required: true, description: 'Clear vehicle and plate-number photographs.' },
-        { key: 'insurance', label: 'Insurance', required: false, description: 'Required where applicable.' },
-        { key: 'roadworthiness', label: 'Roadworthiness', required: false, description: 'Required where applicable.' },
-        { key: 'guarantor', label: 'Guarantor', required: true, description: 'Guarantor profile and government-issued ID.' },
-        { key: 'bankAccount', label: 'Bank account', required: true, description: 'Account details must be resolved and verified automatically.' },
+        {
+          key: 'identity',
+          label: 'Identity / KYC',
+          required: true,
+          description: 'NIN/NIN slip or approved government-issued ID.',
+        },
+        {
+          key: 'profilePhoto',
+          label: 'Passport/profile photograph',
+          required: true,
+          description: 'Recent clear profile photograph.',
+        },
+        {
+          key: 'liveness',
+          label: 'Live selfie / liveness verification',
+          required: true,
+          description: 'Complete the supported liveness verification process.',
+        },
+        {
+          key: 'riderLicence',
+          label: 'Rider/motorcycle licence',
+          required: true,
+          description: 'Valid rider or motorcycle licence where applicable.',
+        },
+        {
+          key: 'vehicleRegistration',
+          label: 'Vehicle registration',
+          required: true,
+          description: 'Current registration and proof of lawful use.',
+        },
+        {
+          key: 'vehiclePhoto',
+          label: 'Vehicle photo',
+          required: true,
+          description: 'Clear vehicle and plate-number photographs.',
+        },
+        {
+          key: 'insurance',
+          label: 'Insurance',
+          required: false,
+          description: 'Required where applicable.',
+        },
+        {
+          key: 'roadworthiness',
+          label: 'Roadworthiness',
+          required: false,
+          description: 'Required where applicable.',
+        },
+        {
+          key: 'guarantor',
+          label: 'Guarantor',
+          required: true,
+          description: 'Guarantor profile and government-issued ID.',
+        },
+        {
+          key: 'bankAccount',
+          label: 'Bank account',
+          required: true,
+          description: 'Account details must be resolved and verified automatically.',
+        },
       ],
     };
   }
@@ -77,7 +126,8 @@ export class RidersService {
 
     return {
       ...profile,
-      statusMessage: profile.onboardingStatus === 'UNDER_REVIEW' ? 'Your Account is Under Review' : undefined,
+      statusMessage:
+        profile.onboardingStatus === 'UNDER_REVIEW' ? 'Your Account is Under Review' : undefined,
       canSubmit,
     };
   }
@@ -211,7 +261,10 @@ export class RidersService {
       message: 'Your rider application is now under review.',
       data: { riderId: updated.id, status: updated.onboardingStatus },
       templateKey: 'kycUpdate',
-      templateData: { status: updated.onboardingStatus, message: 'Our compliance team will review your documents.' },
+      templateData: {
+        status: updated.onboardingStatus,
+        message: 'Our compliance team will review your documents.',
+      },
     });
 
     return { ...updated, statusMessage: 'Your Account is Under Review', canSubmit: false };
@@ -310,8 +363,7 @@ export class RidersService {
     }
 
     const qoreidStatus = verifyResult.summary?.status ?? 'UNVERIFIED';
-    const shouldApprove =
-      qoreidStatus === 'VERIFIED' && this.qoreid.shouldAutoApprove;
+    const shouldApprove = qoreidStatus === 'VERIFIED' && this.qoreid.shouldAutoApprove;
 
     const updated = await this.prisma.riderDocument.update({
       where: { id: document.id },
@@ -325,9 +377,7 @@ export class RidersService {
     });
 
     if (shouldApprove) {
-      this.logger.log(
-        `RiderDocument ${document.id} auto-approved by QoreID (status=VERIFIED)`,
-      );
+      this.logger.log(`RiderDocument ${document.id} auto-approved by QoreID (status=VERIFIED)`);
       await this.prisma.auditLog.create({
         data: {
           actorId: null, // system action
@@ -366,14 +416,10 @@ export class RidersService {
       throw new BadRequestException('Document number is required for automated verification.');
     }
 
-    const verifyResult = await this.dispatchDocumentVerify(
-      document.type,
-      document.documentNumber,
-    );
+    const verifyResult = await this.dispatchDocumentVerify(document.type, document.documentNumber);
 
     const qoreidStatus = verifyResult.summary?.status ?? 'UNVERIFIED';
-    const shouldApprove =
-      qoreidStatus === 'VERIFIED' && this.qoreid.shouldAutoApprove;
+    const shouldApprove = qoreidStatus === 'VERIFIED' && this.qoreid.shouldAutoApprove;
 
     const updated = await this.prisma.guarantorDocument.update({
       where: { id: document.id },
@@ -386,9 +432,7 @@ export class RidersService {
     });
 
     if (shouldApprove) {
-      this.logger.log(
-        `GuarantorDocument ${document.id} auto-approved by QoreID (status=VERIFIED)`,
-      );
+      this.logger.log(`GuarantorDocument ${document.id} auto-approved by QoreID (status=VERIFIED)`);
       await this.prisma.auditLog.create({
         data: {
           actorId: null,

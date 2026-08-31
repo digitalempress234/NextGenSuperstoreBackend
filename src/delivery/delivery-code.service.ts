@@ -39,9 +39,7 @@ export class DeliveryCodeService {
     }
 
     if (delivery.riderId !== actorUserId) {
-      throw new ForbiddenException(
-        'Only the assigned rider can issue the delivery code',
-      );
+      throw new ForbiddenException('Only the assigned rider can issue the delivery code');
     }
 
     if (delivery.status === 'DELIVERED') {
@@ -87,11 +85,7 @@ export class DeliveryCodeService {
     };
   }
 
-  async verify(
-    deliveryId: number,
-    dto: VerifyDeliveryCodeDto,
-    actorUserId: number,
-  ) {
+  async verify(deliveryId: number, dto: VerifyDeliveryCodeDto, actorUserId: number) {
     const delivery = await this.prisma.delivery.findUnique({
       where: { id: deliveryId },
       include: {
@@ -104,9 +98,7 @@ export class DeliveryCodeService {
     }
 
     if (delivery.riderId !== actorUserId) {
-      throw new ForbiddenException(
-        'Only the assigned rider can verify delivery',
-      );
+      throw new ForbiddenException('Only the assigned rider can verify delivery');
     }
 
     if (delivery.status === 'DELIVERED') {
@@ -172,8 +164,7 @@ export class DeliveryCodeService {
       userId: delivery.order.userId,
       type: 'DELIVERY_COMPLETED',
       title: 'Delivery completed',
-      message:
-        `Order ${delivery.order.orderNumber} has been delivered successfully.`,
+      message: `Order ${delivery.order.orderNumber} has been delivered successfully.`,
       data: {
         orderNumber: delivery.order.orderNumber,
         deliveryId,
