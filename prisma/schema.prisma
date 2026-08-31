@@ -1,0 +1,1355 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum RoleName {
+  CUSTOMER
+  VENDOR
+  STORE_AGENT
+  RIDER
+  SUPER_ADMIN
+  OPERATIONS_ADMIN
+  FINANCE_ADMIN
+  RISK_COMPLIANCE_ADMIN
+  MERCHANT_ADMIN
+  CUSTOMER_SUPPORT_ADMIN
+  CREDIT_BNPL_ADMIN
+  AUDIT_OBSERVER_ADMIN
+  REGIONAL_ADMIN
+  COMPLIANCE_LEAD
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  OPAY
+  WALLET
+  NEXTGEN_PURSE
+  EASYBUY
+  MAKOPA
+}
+
+enum PaymentProvider {
+  PAYSTACK
+  MANUAL
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  ORDER_RECEIVED
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  RIDER_ASSIGNED
+  OUT_FOR_DELIVERY
+  PICKED_UP
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum FulfillmentType {
+  PICKUP
+  DELIVERY
+}
+
+enum DeliveryStatus {
+  PENDING
+  OFFERED
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum OnboardingStatus {
+  CREATED
+  PROFILE_COMPLETED
+  DOCUMENTS_UPLOADED
+  BANK_VERIFIED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum NotificationType {
+  ORDER_PLACED
+  ORDER_STATUS_UPDATE
+  ORDER_CANCELLED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  VENDOR_APPROVED
+  VENDOR_REJECTED
+  NEW_REVIEW
+  PRODUCT_OUT_OF_STOCK
+  DELIVERY_ASSIGNED
+  DELIVERY_COMPLETED
+  DELIVERY_CODE
+  KYC_UPDATE
+  SYSTEM_ANNOUNCEMENT
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum VehicleOwnership {
+  OWNED
+  AUTHORIZED_TO_USE
+  LEASED
+}
+
+enum VehicleStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum UploadType {
+  PRODUCT_IMAGE
+  STORE_IMAGE
+  PROFILE_PHOTO
+  KYC_DOCUMENT
+  VEHICLE_DOCUMENT
+  GUARANTOR_DOCUMENT
+}
+
+enum ChatRole {
+  ADMIN
+  USER
+}
+
+enum WalletTransactionType {
+  CREDIT
+  DEBIT
+  HOLD
+  RELEASE
+  ADJUSTMENT
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  REJECTED
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REJECT
+  LOGIN
+  LOGOUT
+  PAYMENT
+  STATUS_CHANGE
+}
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum OAuthProvider {
+  GOOGLE
+}
+
+model OtpChallenge {
+  id           Int        @id @default(autoincrement())
+  userId       Int
+  purpose      OtpPurpose
+  target       String
+  challengeKey String     @unique
+  codeHash     String
+  expiresAt    DateTime
+  attempts     Int        @default(0)
+  maxAttempts  Int        @default(5)
+  createdAt    DateTime   @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+  @@index([target, purpose, createdAt])
+  @@index([expiresAt])
+  @@index([codeHash])
+}
+
+model OAuthAccount {
+  id                Int           @id @default(autoincrement())
+  userId            Int
+  provider          OAuthProvider
+  providerAccountId String
+  email             String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+  @@index([email, provider])
+}
+
+model User {
+  id              Int        @id @default(autoincrement())
+  firstName       String?
+  lastName        String?
+  gender          String?
+  dateOfBirth     DateTime?
+  email           String     @unique
+  passwordHash    String?
+  phoneNumber     String?
+  avatarUrl       String?
+  status          UserStatus @default(ACTIVE)
+  isEmailVerified Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  roles                   UserRole[]
+  permissionOverrides     PermissionOverride[]
+  adminSessions           AdminSession[]
+  approvalsInitiated      ApprovalRequest[]           @relation("ApprovalInitiator")
+  approvalsDecided        ApprovalRequest[]           @relation("ApprovalDecider")
+  auditLogs               AuditLog[]                  @relation("AuditActor")
+  merchantScopes          MerchantScope[]
+  regionScopes            RegionScope[]
+  addresses               Address[]
+  vendorProfile           VendorProfile?
+  riderProfile            RiderProfile?
+  cart                    Cart?
+  wishlists               WishlistItem[]
+  compareList             CompareList?
+  orders                  Order[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  emailLogs               EmailLog[]
+  reviews                 Review[]
+  riderDeliveries         Delivery[]                  @relation("RiderDeliveries")
+  riderLocations          DeliveryLocation[]
+  deliveryOffers          DeliveryOffer[]
+  wallet                  Wallet?
+  withdrawals             Withdrawal[]
+  storesOwned             Store[]                     @relation("StoreOwner")
+  checkoutPaymentGroups   CheckoutPaymentGroup[]
+  storeMemberships        StoreUser[]
+  createdDocuments        RiderDocument[]             @relation("DocumentUploader")
+  pickupPrepared          Pickup[]                    @relation("PickupPreparedBy")
+  pickupVerified          Pickup[]                    @relation("PickupVerifiedBy")
+  uploads                 Upload[]
+  livenessVerifications   RiderLivenessVerification[]
+  chatAsAdmin             ChatConversation[]          @relation("ConversationAdmin")
+  chatAsUser              ChatConversation[]          @relation("ConversationUser")
+  chatMessages            ChatMessage[]               @relation("ChatMessageSender")
+  orderStatusChanges      OrderStatusHistory[]        @relation("OrderStatusActor")
+  otpChallenges           OtpChallenge[]
+  oauthAccounts           OAuthAccount[]
+}
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  name        RoleName         @unique
+  description String?
+  level       Int              @default(1)
+  isSystem    Boolean          @default(true)
+  users       UserRole[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Permission {
+  id          Int                  @id @default(autoincrement())
+  key         String               @unique
+  description String?
+  roles       RolePermission[]
+  overrides   PermissionOverride[]
+}
+
+model UserRole {
+  userId     Int
+  roleId     Int
+  assignedAt DateTime  @default(now())
+  expiresAt  DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@index([userId, expiresAt])
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model PermissionOverride {
+  id           Int        @id @default(autoincrement())
+  userId       Int
+  permissionId Int
+  granted      Boolean    @default(true)
+  scopeType    String?
+  scopeId      String?
+  reason       String
+  startsAt     DateTime   @default(now())
+  expiresAt    DateTime?
+  createdAt    DateTime   @default(now())
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([permissionId, expiresAt])
+}
+
+model ApprovalPolicy {
+  id                   Int               @id @default(autoincrement())
+  actionKey            String            @unique
+  description          String?
+  thresholdMinor       Int?
+  requiredApprovals    Int               @default(1)
+  initiatorPermissions Json?
+  approverPermissions  Json?
+  enabled              Boolean           @default(true)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  requests             ApprovalRequest[]
+}
+
+model ApprovalRequest {
+  id             Int            @id @default(autoincrement())
+  policyId       Int
+  actionKey      String
+  resourceType   String
+  resourceId     String
+  requestedById  Int
+  decidedById    Int?
+  status         String         @default("PENDING")
+  reason         String?
+  payload        Json?
+  decisionReason String?
+  requestedAt    DateTime       @default(now())
+  decidedAt      DateTime?
+  policy         ApprovalPolicy @relation(fields: [policyId], references: [id])
+  requestedBy    User           @relation("ApprovalInitiator", fields: [requestedById], references: [id])
+  decidedBy      User?          @relation("ApprovalDecider", fields: [decidedById], references: [id])
+
+  @@index([status, actionKey, requestedAt])
+  @@index([resourceType, resourceId])
+}
+
+model AdminSession {
+  id                Int       @id @default(autoincrement())
+  userId            Int
+  sessionTokenHash  String    @unique
+  ipAddress         String?
+  userAgent         String?
+  deviceFingerprint String?
+  lastSeenAt        DateTime  @default(now())
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt, expiresAt])
+}
+
+model MerchantScope {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  storeId   Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storeId])
+}
+
+model RegionScope {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  country   String   @default("NG")
+  state     String
+  city      String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, state, city])
+}
+
+model Address {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  label     String?
+  state     String?
+  city      String?
+  address   String
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isDefault])
+}
+
+model VendorProfile {
+  id                   Int          @id @default(autoincrement())
+  userId               Int          @unique
+  phoneNumber          String?
+  state                String?
+  city                 String?
+  address              String?
+  documentReviewStatus ReviewStatus @default(PENDING)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Store {
+  id          Int      @id @default(autoincrement())
+  ownerUserId Int
+  categoryId  Int?
+  storeName   String
+  description String?
+  email       String?
+  phone       String?
+  state       String
+  city        String
+  address     String
+  latitude    Decimal? @db.Decimal(10, 7)
+  longitude   Decimal? @db.Decimal(10, 7)
+  imageUrl    String?
+  isActive    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner            User                  @relation("StoreOwner", fields: [ownerUserId], references: [id])
+  category         Category?             @relation(fields: [categoryId], references: [id])
+  members          StoreUser[]
+  products         StoreProduct[]
+  orders           Order[]
+  reviews          Review[]
+  merchantScopes   MerchantScope[]
+  cacVerifications StoreCacVerification[]
+  wallet           StoreWallet?
+  withdrawals      StoreWithdrawal[]
+
+  @@index([ownerUserId])
+  @@index([city, state, isActive])
+}
+
+// CAC verification for stores via QoreID CAC Basic API
+// Endpoint: POST https://api.qoreid.com/v1/ng/identities/cac-basic
+// regNumber format: RC1234, BN1234, IT1234, etc.
+model StoreCacVerification {
+  id              Int            @id @default(autoincrement())
+  storeId         Int
+  regNumber       String         // e.g. RC1234 | BN1234 | IT1234
+  status          DocumentStatus @default(PENDING)
+  // ── QoreID response fields ──
+  qoreidReference String?        // QoreID transaction reference
+  qoreidStatus    String?        // "VERIFIED" | "UNVERIFIED" | "PARTIAL" | null
+  qoreidRaw       Json?          // Full CAC Basic API response snapshot for audit
+  companyName     String?        // Extracted from QoreID response
+  companyType     String?        // e.g. "Private Limited", "Business Name", etc.
+  incorporatedAt  DateTime?      // Date of incorporation from QoreID
+  // ── Review fields ──
+  rejectionReason String?
+  reviewedById    Int?
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  store           Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status])
+  @@index([regNumber])
+}
+
+model StoreUser {
+  storeId Int
+  userId  Int
+  role    String @default("agent")
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, userId])
+  @@index([userId])
+}
+
+model Category {
+  id        Int        @id @default(autoincrement())
+  name      String
+  parentId  Int?
+  level     Int        @default(0)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  products  Product[]
+  stores    Store[]
+
+  @@index([parentId])
+}
+
+model Product {
+  id           Int            @id @default(autoincrement())
+  name         String
+  brand        String?
+  barcode      String?        @unique
+  description  String?
+  unit         String?
+  categoryId   Int
+  status       Boolean        @default(true)
+  images       ProductImage[]
+  category     Category       @relation(fields: [categoryId], references: [id])
+  offers       StoreProduct[]
+  wishlist     WishlistItem[]
+  compareItems CompareItem[]
+  reviews      Review[]
+  orderItems   OrderItem[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([name])
+  @@index([brand])
+  @@index([categoryId, status])
+}
+
+model ProductImage {
+  id        Int      @id @default(autoincrement())
+  productId Int
+  url       String
+  publicId  String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, sortOrder])
+}
+
+model StoreProduct {
+  id            Int           @id @default(autoincrement())
+  storeId       Int
+  productId     Int
+  sku           String?
+  price         Decimal       @db.Decimal(12, 2)
+  discountPrice Decimal?      @db.Decimal(12, 2)
+  discountType  DiscountType?
+  stockQuantity Int           @default(0)
+  availability  Boolean       @default(true)
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  store         Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+
+  @@unique([storeId, productId])
+  @@index([productId, price])
+  @@index([storeId, isActive])
+}
+
+model WishlistItem {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  productId Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model CompareList {
+  id        Int           @id @default(autoincrement())
+  userId    Int           @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CompareItem[]
+}
+
+model CompareItem {
+  id            Int         @id @default(autoincrement())
+  compareListId Int
+  productId     Int
+  createdAt     DateTime    @default(now())
+  compareList   CompareList @relation(fields: [compareListId], references: [id], onDelete: Cascade)
+  product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([compareListId, productId])
+}
+
+model Cart {
+  id         Int        @id @default(autoincrement())
+  userId     Int        @unique
+  currency   String     @default("NGN")
+  subtotal   Decimal    @default(0) @db.Decimal(12, 2)
+  totalItems Int        @default(0)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items      CartItem[]
+}
+
+model CartItem {
+  id             Int          @id @default(autoincrement())
+  cartId         Int
+  storeProductId Int
+  quantity       Int
+  unitPrice      Decimal      @db.Decimal(12, 2)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  cart           Cart         @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  storeProduct   StoreProduct @relation(fields: [storeProductId], references: [id])
+
+  @@unique([cartId, storeProductId])
+}
+
+model CheckoutPaymentGroup {
+  id          Int                         @id @default(autoincrement())
+  userId      Int
+  paymentId   Int?
+  totalAmount Decimal                     @db.Decimal(12, 2)
+  currency    String                      @default("NGN")
+  status      PaymentStatus               @default(PENDING)
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  user        User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment     Payment?                    @relation(fields: [paymentId], references: [id])
+  allocations CheckoutPaymentAllocation[]
+
+  @@index([userId, createdAt])
+}
+
+model CheckoutPaymentAllocation {
+  id             Int                  @id @default(autoincrement())
+  paymentGroupId Int
+  orderId        Int
+  amount         Decimal              @db.Decimal(12, 2)
+  paymentGroup   CheckoutPaymentGroup @relation(fields: [paymentGroupId], references: [id], onDelete: Cascade)
+  order          Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentGroupId, orderId])
+}
+
+model Order {
+  id              Int                         @id @default(autoincrement())
+  orderNumber     String                      @unique
+  userId          Int
+  storeId         Int
+  fulfillmentType FulfillmentType
+  currentStatus   OrderStatus                 @default(ORDER_RECEIVED)
+  customerName    String
+  customerEmail   String
+  customerPhone   String?
+  deliveryLabel   String?
+  deliveryState   String?
+  deliveryCity    String?
+  deliveryAddress String?
+  currency        String                      @default("NGN")
+  subtotal        Decimal                     @db.Decimal(12, 2)
+  shippingFee     Decimal                     @default(0) @db.Decimal(12, 2)
+  taxAmount       Decimal                     @default(0) @db.Decimal(12, 2)
+  total           Decimal                     @db.Decimal(12, 2)
+  placedAt        DateTime                    @default(now())
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  user            User                        @relation(fields: [userId], references: [id])
+  store           Store                       @relation(fields: [storeId], references: [id])
+  items           OrderItem[]
+  payment         Payment?                    @relation("OrderPayment")
+  delivery        Delivery?                   @relation("OrderDelivery")
+  pickup          Pickup?
+  allocations     CheckoutPaymentAllocation[]
+  statusHistory   OrderStatusHistory[]
+
+  @@index([userId, createdAt])
+  @@index([storeId, currentStatus, createdAt])
+}
+
+model OrderItem {
+  id             Int          @id @default(autoincrement())
+  orderId        Int
+  storeProductId Int
+  productId      Int
+  quantity       Int
+  unitPrice      Decimal      @db.Decimal(12, 2)
+  totalPrice     Decimal      @db.Decimal(12, 2)
+  productName    String
+  productCode    String?
+  productImage   String?
+  createdAt      DateTime     @default(now())
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  storeProduct   StoreProduct @relation(fields: [storeProductId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+}
+
+model OrderStatusHistory {
+  id          Int          @id @default(autoincrement())
+  orderId     Int
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  changedById Int?
+  reason      String?
+  createdAt   DateTime     @default(now())
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedBy   User?        @relation("OrderStatusActor", fields: [changedById], references: [id])
+
+  @@index([orderId, createdAt])
+}
+
+model Payment {
+  id             Int                    @id @default(autoincrement())
+  amount         Decimal                @db.Decimal(12, 2)
+  currency       String                 @default("NGN")
+  status         PaymentStatus          @default(PENDING)
+  paymentMethod  PaymentMethod
+  provider       PaymentProvider
+  transactionRef String?                @unique
+  providerRef    String?
+  paymentUrl     String?
+  metadata       Json?
+  paidAt         DateTime?
+  failureReason  String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  order          Order?                 @relation("OrderPayment", fields: [orderId], references: [id])
+  orderId        Int?                   @unique
+  groups         CheckoutPaymentGroup[]
+  webhookEvents  PaymentWebhookEvent[]
+}
+
+model PaymentWebhookEvent {
+  id           Int       @id @default(autoincrement())
+  provider     String
+  eventId      String    @unique
+  eventType    String
+  payload      Json
+  processed    Boolean   @default(false)
+  processedAt  DateTime?
+  errorMessage String?
+  createdAt    DateTime  @default(now())
+  Payment      Payment?  @relation(fields: [paymentId], references: [id])
+  paymentId    Int?
+
+  @@index([provider, eventType, createdAt])
+}
+
+model Pickup {
+  id           Int       @id @default(autoincrement())
+  orderId      Int       @unique
+  codeHash     String
+  qrToken      String    @unique
+  status       String    @default("pending")
+  preparedById Int?
+  verifiedById Int?
+  preparedAt   DateTime?
+  collectedAt  DateTime?
+  expiresAt    DateTime?
+  order        Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  preparedBy   User?     @relation("PickupPreparedBy", fields: [preparedById], references: [id])
+  verifiedBy   User?     @relation("PickupVerifiedBy", fields: [verifiedById], references: [id])
+
+  @@index([status])
+}
+
+model Delivery {
+  id               Int                    @id @default(autoincrement())
+  orderId          Int                    @unique
+  riderId          Int?
+  deliveryService  String?
+  trackingMapUrl   String?
+  deliveryLabel    String?
+  deliveryState    String?
+  deliveryCity     String?
+  deliveryAddress  String
+  pickupCodeHash   String?
+  deliveryCodeHash String?
+  status           DeliveryStatus         @default(PENDING)
+  assignedAt          DateTime?
+  pickedUpAt          DateTime?
+  deliveredAt         DateTime?
+  deliveryCodeExpiresAt DateTime?
+  deliveryCodeAttempts  Int @default(0)
+  createdAt           DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  order            Order                  @relation("OrderDelivery", fields: [orderId], references: [id], onDelete: Cascade)
+  rider            User?                  @relation("RiderDeliveries", fields: [riderId], references: [id])
+  offers           DeliveryOffer[]
+  statusUpdates    DeliveryStatusUpdate[]
+  locations        DeliveryLocation[]
+  riderEarning     RiderEarning?
+
+  @@index([riderId, status])
+}
+
+model DeliveryOffer {
+  id         Int         @id @default(autoincrement())
+  deliveryId Int
+  riderId    Int
+  status     OfferStatus @default(PENDING)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  delivery   Delivery    @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  rider      User        @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@unique([deliveryId, riderId])
+  @@index([riderId, status])
+}
+
+model DeliveryLocation {
+  id           Int      @id @default(autoincrement())
+  deliveryId   Int
+  riderId      Int
+  latitude     Decimal  @db.Decimal(10, 7)
+  longitude    Decimal  @db.Decimal(10, 7)
+  accuracyM    Decimal? @db.Decimal(8, 2)
+  speedKph     Decimal? @db.Decimal(8, 2)
+  headingDeg   Decimal? @db.Decimal(6, 2)
+  batteryLevel Int?
+  recordedAt   DateTime @default(now())
+  delivery     Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  rider        User     @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId, recordedAt])
+  @@index([riderId, recordedAt])
+}
+
+model DeliveryStatusUpdate {
+  id         Int            @id @default(autoincrement())
+  deliveryId Int
+  status     DeliveryStatus
+  location   String?
+  note       String?
+  occurredAt DateTime       @default(now())
+  delivery   Delivery       @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId, occurredAt])
+}
+
+model RiderProfile {
+  id                     Int                          @id @default(autoincrement())
+  userId                 Int                          @unique
+  areaOfOperation        String?
+  businessName           String?
+  businessState          String?
+  businessCity           String?
+  businessAddress        String?
+  emergencyContactName   String?
+  emergencyContactPhone  String?
+  nextOfKinName          String?
+  nextOfKinPhone         String?
+  onboardingStatus       OnboardingStatus             @default(CREATED)
+  isOnline               Boolean                      @default(false)
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+  user                   User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents              RiderDocument[]
+  licences               RiderLicence[]
+  liveness               RiderLivenessVerification[]
+  vehicles               Vehicle[]
+  bankAccounts           RiderBankAccount[]
+  financialVerifications RiderFinancialVerification[]
+  guarantors             Guarantor[]
+  earnings               RiderEarning[]
+
+  @@index([onboardingStatus, isOnline])
+}
+
+model RiderDocument {
+  id              Int            @id @default(autoincrement())
+  riderId         Int
+  type            String
+  documentNumber  String?
+  url             String
+  publicId        String?
+  status          DocumentStatus @default(PENDING)
+  expiryDate      DateTime?
+  rejectionReason String?
+  uploadedById    Int?
+  reviewedById    Int?
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  // ── QoreID automated verification fields (added; original fields above unchanged) ──
+  qoreidReference String?        // QoreID transaction reference returned after verification
+  qoreidStatus    String?        // "VERIFIED" | "UNVERIFIED" | "PARTIAL" | null
+  qoreidRaw       Json?          // Full QoreID response snapshot stored for audit trail
+  faceMatchScore  Decimal?       @db.Decimal(5, 2) // 0-100 confidence score from face-match endpoint
+  rider           RiderProfile   @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  uploadedBy      User?          @relation("DocumentUploader", fields: [uploadedById], references: [id])
+
+  @@index([riderId, type, status])
+}
+
+model RiderLicence {
+  id          Int            @id @default(autoincrement())
+  riderId     Int
+  type        String
+  number      String?
+  issueDate   DateTime?
+  expiryDate  DateTime?
+  documentUrl String?
+  status      DocumentStatus @default(PENDING)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  rider       RiderProfile   @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId, expiryDate])
+}
+
+model RiderLivenessVerification {
+  id              Int            @id @default(autoincrement())
+  riderId         Int
+  provider        String?
+  reference       String?
+  selfieUrl       String?
+  confidenceScore Decimal?       @db.Decimal(5, 2)
+  status          DocumentStatus @default(PENDING)
+  verifiedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  rider           RiderProfile   @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
+
+  @@index([riderId, status])
+}
+
+model Vehicle {
+  id                 Int                   @id @default(autoincrement())
+  riderId            Int
+  type               String
+  make               String?
+  model              String?
+  year               Int?
+  color              String?
+  plateNumber        String
+  registrationNumber String?
+  ownershipType      VehicleOwnership
+  status             VehicleStatus         @default(PENDING)
+  photoUrl           String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  rider              RiderProfile          @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  documents          VehicleDocument[]
+  verifications      VehicleVerification[]
+
+  @@index([riderId, status])
+  @@index([plateNumber])
+}
+
+model VehicleDocument {
+  id              Int            @id @default(autoincrement())
+  vehicleId       Int
+  type            String
+  documentNumber  String?
+  url             String
+  publicId        String?
+  status          DocumentStatus @default(PENDING)
+  expiryDate      DateTime?
+  rejectionReason String?
+  reviewedById    Int?
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  vehicle         Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, type, status])
+}
+
+model VehicleVerification {
+  id         Int            @id @default(autoincrement())
+  vehicleId  Int
+  type       String
+  provider   String?
+  reference  String?
+  reportUrl  String?
+  status     DocumentStatus @default(PENDING)
+  verifiedAt DateTime?
+  createdAt  DateTime       @default(now())
+  vehicle    Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, type, status])
+}
+
+model RiderBankAccount {
+  id                 Int            @id @default(autoincrement())
+  riderId            Int
+  bankCode           String
+  bankName           String
+  accountNumber      String
+  accountName        String
+  verificationStatus DocumentStatus @default(PENDING)
+  isPrimary          Boolean        @default(false)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  rider              RiderProfile   @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId, isPrimary])
+}
+
+model RiderFinancialVerification {
+  id         Int            @id @default(autoincrement())
+  riderId    Int
+  type       String
+  provider   String?
+  reference  String?
+  status     DocumentStatus @default(PENDING)
+  verifiedAt DateTime?
+  createdAt  DateTime       @default(now())
+  rider      RiderProfile   @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([riderId, type, status])
+}
+
+model Guarantor {
+  id            Int                 @id @default(autoincrement())
+  riderId       Int
+  fullName      String
+  phone         String
+  relationship  String
+  address       String?
+  photographUrl String?
+  status        DocumentStatus      @default(PENDING)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  rider         RiderProfile        @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  documents     GuarantorDocument[]
+
+  @@index([riderId, status])
+}
+
+model GuarantorDocument {
+  id              Int            @id @default(autoincrement())
+  guarantorId     Int
+  type            String
+  documentNumber  String?
+  url             String
+  publicId        String?
+  status          DocumentStatus @default(PENDING)
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedById    Int?
+  createdAt       DateTime       @default(now())
+  // ── QoreID automated verification fields (added; original fields above unchanged) ──
+  qoreidReference String?        // QoreID transaction reference
+  qoreidStatus    String?        // "VERIFIED" | "UNVERIFIED" | "PARTIAL" | null
+  qoreidRaw       Json?          // Full QoreID response snapshot stored for audit trail
+  guarantor       Guarantor      @relation(fields: [guarantorId], references: [id], onDelete: Cascade)
+
+  @@index([guarantorId, status])
+}
+
+model Wallet {
+  id           Int                 @id @default(autoincrement())
+  userId       Int                 @unique
+  balance      Decimal             @default(0) @db.Decimal(14, 2)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id          Int                   @id @default(autoincrement())
+  walletId    Int
+  amount      Decimal               @db.Decimal(14, 2)
+  type        WalletTransactionType
+  description String?
+  reference   String?               @unique
+  createdAt   DateTime              @default(now())
+  wallet      Wallet                @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+}
+
+model Withdrawal {
+  id              Int              @id @default(autoincrement())
+  userId          Int
+  amount          Decimal          @db.Decimal(14, 2)
+  status          WithdrawalStatus @default(PENDING)
+  mode            String           @default("MANUAL") // "MANUAL" | "AUTO"
+  bankName        String
+  accountNumber   String
+  accountName     String
+  providerRef     String?          // Paystack transfer ref for AUTO mode
+  reviewedById    Int?
+  reviewedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+}
+
+// ─── Platform Configuration ───────────────────────────────────────────────────
+// Admin-overridable key/value store for rates and feature flags.
+// Resolution priority: this table → .env → hardcoded fallback.
+model PlatformConfig {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique // "vat_rate" | "service_charge_rate" | "platform_fee_rate"
+  value       String           // decimal string e.g. "0.075"
+  description String?
+  updatedAt   DateTime @updatedAt
+  updatedById Int?             // admin userId who last changed it
+}
+
+// ─── Store Wallet ─────────────────────────────────────────────────────────────
+model StoreWallet {
+  id            Int                    @id @default(autoincrement())
+  storeId       Int                    @unique
+  balance       Decimal                @default(0) @db.Decimal(14, 2)
+  lockedBalance Decimal                @default(0) @db.Decimal(14, 2) // held, not yet available
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  store         Store                  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  transactions  StoreWalletTransaction[]
+  withdrawals   StoreWithdrawal[]
+}
+
+model StoreWalletTransaction {
+  id          Int                   @id @default(autoincrement())
+  walletId    Int
+  amount      Decimal               @db.Decimal(14, 2)
+  type        WalletTransactionType // CREDIT | DEBIT | HOLD | RELEASE
+  description String?               // stores JSON breakdown of deductions
+  reference   String?               @unique // order number or withdrawal ref
+  orderId     Int?
+  createdAt   DateTime              @default(now())
+  wallet      StoreWallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId, createdAt])
+  @@index([orderId])
+}
+
+model StoreWithdrawal {
+  id            Int              @id @default(autoincrement())
+  storeId       Int
+  walletId      Int
+  amount        Decimal          @db.Decimal(14, 2)
+  status        WithdrawalStatus @default(PENDING)
+  mode          String           @default("MANUAL") // "MANUAL" | "AUTO"
+  bankName      String
+  accountNumber String
+  accountName   String
+  providerRef   String?          // Paystack transfer ref for AUTO mode
+  rejectionReason String?
+  reviewedById  Int?
+  reviewedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  store         Store            @relation(fields: [storeId], references: [id])
+  wallet        StoreWallet      @relation(fields: [walletId], references: [id])
+
+  @@index([storeId, status, createdAt])
+}
+
+// ─── Rider Earnings ───────────────────────────────────────────────────────────
+// Tracks per-delivery earnings; held until delivery confirmed, then released.
+model RiderEarning {
+  id           Int          @id @default(autoincrement())
+  riderId      Int          // RiderProfile.id
+  deliveryId   Int          @unique
+  amount       Decimal      @db.Decimal(14, 2)
+  status       String       @default("HELD") // "HELD" | "RELEASED"
+  releasedAt   DateTime?
+  createdAt    DateTime     @default(now())
+  riderProfile RiderProfile @relation(fields: [riderId], references: [id])
+  delivery     Delivery     @relation(fields: [deliveryId], references: [id])
+
+  @@index([riderId, status])
+}
+
+model Review {
+  id                 Int          @id @default(autoincrement())
+  userId             Int
+  productId          Int
+  storeId            Int
+  rating             Int
+  comment            String?
+  isVerifiedPurchase Boolean      @default(false)
+  status             ReviewStatus @default(PENDING)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product            Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store              Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([productId, createdAt])
+  @@index([storeId, createdAt])
+}
+
+model NotificationPreference {
+  id        Int              @id @default(autoincrement())
+  userId    Int
+  type      NotificationType
+  inApp     Boolean          @default(true)
+  email     Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
+}
+
+model EmailLog {
+  id           Int       @id @default(autoincrement())
+  userId       Int?
+  toAddress    String
+  templateKey  String
+  subject      String
+  status       String    @default("PENDING")
+  providerId   String?
+  errorMessage String?   @db.Text
+  sentAt       DateTime?
+  createdAt    DateTime  @default(now())
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+model Notification {
+  id          Int                  @id @default(autoincrement())
+  recipientId Int
+  title       String
+  message     String
+  type        NotificationType
+  data        Json?
+  isRead      Boolean              @default(false)
+  readAt      DateTime?
+  priority    NotificationPriority @default(MEDIUM)
+  expiresAt   DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  recipient   User                 @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, isRead, createdAt])
+}
+
+model ChatConversation {
+  id            Int           @id @default(autoincrement())
+  adminId       Int
+  participantId Int
+  lastMessageAt DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  admin         User          @relation("ConversationAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  participant   User          @relation("ConversationUser", fields: [participantId], references: [id], onDelete: Cascade)
+  messages      ChatMessage[]
+
+  @@unique([adminId, participantId])
+}
+
+model ChatMessage {
+  id             Int              @id @default(autoincrement())
+  conversationId Int
+  senderId       Int
+  body           String           @db.Text
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User             @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model Upload {
+  id           Int        @id @default(autoincrement())
+  ownerUserId  Int?
+  type         UploadType
+  url          String
+  publicId     String?
+  resourceType String?
+  createdAt    DateTime   @default(now())
+  owner        User?      @relation(fields: [ownerUserId], references: [id])
+
+  @@index([ownerUserId, type])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int?
+  action     String
+  permission String?
+  entity     String
+  entityId   String
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  requestId  String?
+  success    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([entity, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([permission, createdAt])
+  @@index([requestId])
+}

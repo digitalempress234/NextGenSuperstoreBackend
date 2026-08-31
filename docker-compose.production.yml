@@ -1,0 +1,17 @@
+services:
+  api:
+    image: ${PURSE_IMAGE}
+    container_name: purse-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PORT=${APP_PORT:-8084}
+    ports:
+      - "${APP_PORT:-8084}:${APP_PORT:-8084}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${APP_PORT:-8084}/purse/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
