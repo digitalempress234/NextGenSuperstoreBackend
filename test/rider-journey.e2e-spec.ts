@@ -1,4 +1,5 @@
-import { INestApplication, VersioningType } from '@nestjs/common';
+import type { INestApplication} from '@nestjs/common';
+import { VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
