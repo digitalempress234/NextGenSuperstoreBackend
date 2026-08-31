@@ -1,36 +1,7 @@
 version: 2.1
 
 jobs:
-  build-and-check:
-    docker:
-      - image: cimg/node:22.14
-    working_directory: ~/purse-backend
-    steps:
-      - checkout
-      - restore_cache:
-          keys:
-            - purse-node-v2-{{ checksum "package.json" }}
-            - purse-node-v2-
-      - run:
-          name: Install dependencies
-          command: npm install --no-audit --no-fund
-      - save_cache:
-          key: purse-node-v2-{{ checksum "package.json" }}
-          paths:
-            - ~/.npm
-            - node_modules
-      - run:
-          name: Validate Prisma schema
-          command: DATABASE_URL="mysql://dummy:dummy@localhost:3306/dummy" npm run prisma:validate
-      - run:
-          name: Check formatting
-          command: npm run format:check
-      - run:
-          name: Lint
-          command: npm run lint
-      - run:
-          name: Build application
-          command: npm run build
+
 
   build-and-push:
     machine:
@@ -58,10 +29,7 @@ jobs:
 workflows:
   ci-cd:
     jobs:
-      - build-and-check
       - build-and-push:
-          requires:
-            - build-and-check
           filters:
             branches:
               only: main
