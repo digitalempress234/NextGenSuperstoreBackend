@@ -53,43 +53,7 @@ jobs:
             docker build --pull --platform linux/amd64 -t "$IMAGE" .
             docker push "$IMAGE"
 
-  deploy-production:
-    machine:
-      image: ubuntu-2204:current
-    steps:
-      - checkout
-      - add_ssh_keys
-      - run:
-          name: Configure SSH host key
-          command: |
-            mkdir -p ~/.ssh
-            chmod 700 ~/.ssh
-            ssh-keyscan -p "${DEPLOY_PORT:-22}" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-            chmod 600 ~/.ssh/known_hosts
-      - run:
-          name: Install production deployment files
-          command: |
-            ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
-              "mkdir -p \"${DEPLOY_PATH:-/opt/purse}\""
-            scp -P "${DEPLOY_PORT:-22}" \
-              docker-compose.production.yml \
-              ops/deploy-production.sh \
-              "$DEPLOY_USER@$DEPLOY_HOST:${DEPLOY_PATH:-/opt/purse}/"
-      - run:
-          name: Deploy immutable image
-          command: |
-            IMAGE="$REGISTRY_HOST/$IMAGE_NAME:$CIRCLE_SHA1"
-            printf '%s\n' "$REGISTRY_PASSWORD" | \
-              ssh -p "${DEPLOY_PORT:-22}" "$DEPLOY_USER@$DEPLOY_HOST" \
-              "chmod +x '${DEPLOY_PATH:-/opt/purse}/deploy-production.sh' && \
-               PURSE_IMAGE='$IMAGE' \
-               REGISTRY_HOST='$REGISTRY_HOST' \
-               REGISTRY_USERNAME='$REGISTRY_USERNAME' \
-               DEPLOY_PATH='${DEPLOY_PATH:-/opt/purse}' \
-               sh '${DEPLOY_PATH:-/opt/purse}/deploy-production.sh'"
-      - run:
-          name: Deployment summary
-          command: echo "Deployed $CIRCLE_SHA1 to production"
+
 
 workflows:
   ci-cd:
@@ -101,11 +65,4 @@ workflows:
           filters:
             branches:
               only: main
-      - deploy-production:
-          requires:
-            - build-and-push
-          filters:
-            branches:
-              only: main
-          context:
-            - purse-production
+
