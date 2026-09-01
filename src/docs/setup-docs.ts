@@ -16,12 +16,15 @@ import { MarketplaceModule } from '../marketplace/marketplace.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { QoreidModule } from '../qoreid/qoreid.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { RidersModule } from '../riders/riders.module';
+import { SettlementsModule } from '../settlements/settlements.module';
 import { StoresModule } from '../stores/stores.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { UsersModule } from '../users/users.module';
+import { VendorsModule } from '../vendors/vendors.module';
 
 export function setupScalarDocs(app: INestApplication) {
   const baseConfig = new DocumentBuilder()
@@ -38,14 +41,14 @@ export function setupScalarDocs(app: INestApplication) {
       'purse_access_token',
     )
     .addServer('https://api.syroltech.com/purse', 'Production')
-    .addServer('http://localhost:3000/purse', 'Local development');
+    .addServer('http://localhost:8084/purse', 'Local development');
 
   // 1. Admin API
   const adminConfig = baseConfig
     .setDescription('API for Administrators and Support Staff.')
     .build();
   const adminDocument = SwaggerModule.createDocument(app, adminConfig, {
-    include: [AdminModule, ApprovalsModule, AuditModule, RbacModule, HealthModule],
+    include: [AdminModule, ApprovalsModule, AuditModule, RbacModule, HealthModule, SettlementsModule, QoreidModule],
   });
   app.use(
     '/docs/admin',
@@ -62,7 +65,7 @@ export function setupScalarDocs(app: INestApplication) {
   // 2. Store API
   const storeConfig = baseConfig.setDescription('API for Store Owners and Managers.').build();
   const storeDocument = SwaggerModule.createDocument(app, storeConfig, {
-    include: [StoresModule, CatalogModule, OrdersModule, UploadsModule, NotificationsModule],
+    include: [StoresModule, VendorsModule, CatalogModule, OrdersModule, UploadsModule, NotificationsModule, SettlementsModule],
   });
   app.use(
     '/docs/store',
@@ -79,7 +82,7 @@ export function setupScalarDocs(app: INestApplication) {
   // 3. Rider API
   const riderConfig = baseConfig.setDescription('API for Delivery Personnel.').build();
   const riderDocument = SwaggerModule.createDocument(app, riderConfig, {
-    include: [RidersModule, DeliveryModule, NotificationsModule],
+    include: [RidersModule, DeliveryModule, NotificationsModule, QoreidModule],
   });
   app.use(
     '/docs/rider',
