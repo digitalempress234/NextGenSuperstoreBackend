@@ -35,7 +35,7 @@ export class StoreWalletService {
 
   // ─── Ledger ───────────────────────────────────────────────────────────────────
 
-  async getTransactions(userId: number, storeId: number, page = 1, limit = 20) {
+  async getTransactions(userId: number, storeId: number, page = 1, limit = 10) {
     await this.assertOwner(userId, storeId);
 
     const wallet = await this.requireWallet(storeId);

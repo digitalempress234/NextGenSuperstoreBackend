@@ -9,7 +9,7 @@ export class NotificationListQueryDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ example: 20, minimum: 1, maximum: 100 })
+  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 100 })
   @IsOptional()
   @IsInt()
   @Min(1)

@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import {
   ApiBody,
   ApiCookieAuth,
-  ApiConsumes,
   ApiHeader,
   ApiOperation,
   ApiTags,
@@ -12,6 +11,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import type { Request } from 'express';
 
 import { CurrentUser } from '../common/current-user.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
 import { Public } from '../auth/public.decorator';
 import { SkipCsrf } from '../common/skip-csrf.decorator';
@@ -28,6 +28,7 @@ export class PaymentsController {
 
   @Post('initialize')
   @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('payments.initiate')
   @ApiOperation({ summary: 'Initialize Paystack payment for a checkout payment group' })
   @OkExample({
     payment: {

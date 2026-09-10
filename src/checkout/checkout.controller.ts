@@ -2,6 +2,7 @@ import { Body, Controller, Post } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
 import { CreateCheckoutDto } from './dto/checkout.dto';
 import { CheckoutService } from './checkout.service';
@@ -13,6 +14,7 @@ export class CheckoutController {
   constructor(private readonly checkoutService: CheckoutService) {}
 
   @Post()
+  @RequirePermissions('checkout.create')
   @ApiOperation({
     summary: 'Create store-specific orders from the current cart and a single payment group',
   })

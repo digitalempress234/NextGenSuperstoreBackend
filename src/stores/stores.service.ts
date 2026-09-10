@@ -10,7 +10,7 @@ export class StoresService {
   list() {
     return this.prisma.store.findMany({
       where: { isActive: true },
-      include: { category: true },
+      include: { category: true, images: { orderBy: { sortOrder: 'asc' } } },
       orderBy: { storeName: 'asc' },
     });
   }
@@ -20,6 +20,7 @@ export class StoresService {
       where: { ownerUserId: userId },
       include: {
         category: true,
+        images: { orderBy: { sortOrder: 'asc' } },
         products: {
           include: {
             product: { include: { images: true } },

@@ -74,6 +74,8 @@ export class AuthService {
         firstName: input.firstName,
         lastName: input.lastName,
         phoneNumber: normalizedPhone,
+        gender: input.gender,
+        dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : undefined,
         roles: customerRole
           ? {
               create: [{ roleId: customerRole.id }],
@@ -129,6 +131,16 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { isEmailVerified: true },
+    });
+
+    // Send the welcome email asynchronously
+    this.mail.sendTemplate(
+      'welcome',
+      user.email,
+      { firstName: user.firstName ?? undefined },
+      user.id,
+    ).catch(err => {
+      this.logger.error(`Failed to send welcome email to ${user.email}`, err);
     });
 
     return { verified: true };

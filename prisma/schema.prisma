@@ -120,6 +120,38 @@ enum OnboardingStatus {
   SUSPENDED
 }
 
+enum VendorOnboardingStatus {
+  CREATED
+  PROFILE_COMPLETED
+  NIN_VERIFIED
+  CAC_VERIFIED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+// ─── Staff / Back-office enums ────────────────────────────────────────────────
+
+enum StaffRole {
+  SUPER_ADMIN
+  OPERATIONS_ADMIN
+  FINANCE_ADMIN
+  RISK_COMPLIANCE_ADMIN
+  MERCHANT_ADMIN
+  CUSTOMER_SUPPORT_ADMIN
+  CREDIT_BNPL_ADMIN
+  AUDIT_OBSERVER_ADMIN
+  REGIONAL_ADMIN
+  COMPLIANCE_LEAD
+}
+
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
 enum NotificationType {
   ORDER_PLACED
   ORDER_STATUS_UPDATE
@@ -410,6 +442,46 @@ model AdminSession {
   @@index([userId, revokedAt, expiresAt])
 }
 
+// ─── Staff / Back-office users ────────────────────────────────────────────────
+
+/// System administrator and support staff accounts.
+/// Completely separate from the customer User table.
+model StaffUser {
+  id                 Int          @id @default(autoincrement())
+  email              String       @unique
+  firstName          String
+  lastName           String
+  phoneNumber        String?      @unique
+  passwordHash       String
+  role               StaffRole
+  status             StaffStatus  @default(ACTIVE)
+  mustChangePassword Boolean      @default(true)
+  createdById        Int?         // ID of the StaffUser who created this account
+  lastLoginAt        DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  sessions  StaffSession[]
+  auditLogs AuditLog[]    @relation("StaffAuditActor")
+
+  @@index([role, status])
+}
+
+model StaffSession {
+  id                Int         @id @default(autoincrement())
+  staffUserId       Int
+  sessionTokenHash  String      @unique
+  ipAddress         String?
+  userAgent         String?
+  lastSeenAt        DateTime    @default(now())
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  createdAt         DateTime    @default(now())
+  staffUser         StaffUser   @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId, revokedAt, expiresAt])
+}
+
 model MerchantScope {
   id        Int      @id @default(autoincrement())
   userId    Int
@@ -451,16 +523,71 @@ model Address {
 }
 
 model VendorProfile {
-  id                   Int          @id @default(autoincrement())
-  userId               Int          @unique
+  id                   Int                    @id @default(autoincrement())
+  userId               Int                    @unique
   phoneNumber          String?
   state                String?
   city                 String?
   address              String?
-  documentReviewStatus ReviewStatus @default(PENDING)
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
-  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentReviewStatus ReviewStatus           @default(PENDING)
+  onboardingStatus     VendorOnboardingStatus @default(CREATED)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ninVerification      VendorNinVerification?
+  cacVerification      VendorCacVerification?
+}
+
+// NIN identity verification for vendor onboarding via QoreID
+model VendorNinVerification {
+  id              Int                    @id @default(autoincrement())
+  vendorProfileId Int                    @unique
+  ninNumber       String
+  status          DocumentStatus         @default(PENDING)
+  // ── QoreID response fields ──
+  qoreidReference String?                // QoreID transaction reference
+  qoreidStatus    String?                // "VERIFIED" | "UNVERIFIED" | "PARTIAL" | null
+  qoreidRaw       Json?                  // Full QoreID response snapshot for audit
+  faceMatchScore  Decimal?               @db.Decimal(5, 2) // 0-100 confidence from face-match
+  // ── Review fields ──
+  rejectionReason String?
+  reviewedById    Int?
+  reviewedAt      DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  vendorProfile   VendorProfile          @relation(fields: [vendorProfileId], references: [id], onDelete: Cascade)
+
+  @@index([vendorProfileId, status])
+}
+
+// CAC business registration verification for vendor onboarding via QoreID
+// Endpoint: POST https://api.qoreid.com/v2/ng/identities/cac-basic
+// regNumber format: RC1234, BN1234, IT1234, etc.
+model VendorCacVerification {
+  id              Int            @id @default(autoincrement())
+  vendorProfileId Int            @unique
+  regNumber       String         // e.g. RC1234 | BN1234 | IT1234
+  status          DocumentStatus @default(PENDING)
+  // ── QoreID response fields ──
+  qoreidReference String?        // QoreID transaction reference
+  qoreidStatus    String?        // "VERIFIED" | "UNVERIFIED" | "PARTIAL" | null
+  qoreidRaw       Json?          // Full CAC Basic API response snapshot for audit
+  companyName     String?        // Extracted from QoreID response
+  companyType     String?        // e.g. "Private Limited", "Business Name", etc.
+  incorporatedAt  DateTime?      // Date of incorporation from QoreID
+  // ── Optional TIN verification fields ──
+  tinVerified     Boolean        @default(false)
+  tinQoreidRaw    Json?          // Full TIN API response snapshot for audit
+  // ── Review fields ──
+  rejectionReason String?
+  reviewedById    Int?
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  vendorProfile   VendorProfile  @relation(fields: [vendorProfileId], references: [id], onDelete: Cascade)
+
+  @@index([vendorProfileId, status])
+  @@index([regNumber])
 }
 
 model Store {
@@ -480,6 +607,7 @@ model Store {
   isActive    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  images      StoreImage[]
 
   owner            User                  @relation("StoreOwner", fields: [ownerUserId], references: [id])
   category         Category?             @relation(fields: [categoryId], references: [id])
@@ -495,6 +623,19 @@ model Store {
   @@index([ownerUserId])
   @@index([city, state, isActive])
 }
+
+model StoreImage {
+  id        Int      @id @default(autoincrement())
+  storeId   Int
+  url       String
+  publicId  String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, sortOrder])
+}
+
 
 // CAC verification for stores via QoreID CAC Basic API
 // Endpoint: POST https://api.qoreid.com/v1/ng/identities/cac-basic
@@ -1334,22 +1475,25 @@ model Upload {
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  actorId    Int?
-  action     String
-  permission String?
-  entity     String
-  entityId   String
-  changes    Json?
-  ipAddress  String?
-  userAgent  String?
-  requestId  String?
-  success    Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+  id            Int        @id @default(autoincrement())
+  actorId       Int?       // Regular user actor (customer, vendor, rider)
+  staffActorId  Int?       // Staff user actor (admin, support, etc.)
+  action        String
+  permission    String?
+  entity        String
+  entityId      String
+  changes       Json?
+  ipAddress     String?
+  userAgent     String?
+  requestId     String?
+  success       Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  actor         User?      @relation("AuditActor", fields: [actorId], references: [id])
+  staffActor    StaffUser? @relation("StaffAuditActor", fields: [staffActorId], references: [id])
 
   @@index([entity, entityId, createdAt])
   @@index([actorId, createdAt])
+  @@index([staffActorId, createdAt])
   @@index([permission, createdAt])
   @@index([requestId])
 }

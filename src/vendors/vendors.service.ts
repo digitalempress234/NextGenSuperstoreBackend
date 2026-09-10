@@ -1,27 +1,285 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+
 import { PrismaService } from '../prisma/prisma.service';
-import { UpdateVendorProfileDto } from './dto/vendor.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+// [Identro] Primary KYC/KYB provider (replaces QoreID for all live verification flows)
+import { IdentroService } from '../identro/identro.service';
+import { QoreIDService } from '../qoreid/qoreid.service';
+import { UpdateVendorProfileDto, VendorNinVerifyDto, VendorCacVerifyDto } from './dto/vendor.dto';
 
 @Injectable()
 export class VendorsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(VendorsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+    private readonly identro: IdentroService,
+    private readonly qoreid: QoreIDService,
+  ) {}
+
+  // ─── Profile ────────────────────────────────────────────────────────────────
 
   async getProfile(userId: number) {
-    const profile = await this.prisma.vendorProfile.findUnique({
+    return this.prisma.vendorProfile.findUnique({
       where: { userId },
+      include: { ninVerification: true, cacVerification: true },
     });
+  }
+
+  async updateProfile(userId: number, dto: UpdateVendorProfileDto) {
+    const profile = await this.prisma.vendorProfile.upsert({
+      where: { userId },
+      create: { userId, ...dto, onboardingStatus: 'PROFILE_COMPLETED' },
+      update: dto,
+    });
+
+    // Advance status only when still at CREATED
+    if (profile.onboardingStatus === 'CREATED') {
+      return this.prisma.vendorProfile.update({
+        where: { id: profile.id },
+        data: { onboardingStatus: 'PROFILE_COMPLETED' },
+        include: { ninVerification: true, cacVerification: true },
+      });
+    }
 
     return profile;
   }
 
-  async updateProfile(userId: number, dto: UpdateVendorProfileDto) {
-    return this.prisma.vendorProfile.upsert({
-      where: { userId },
+  // ─── KYC: NIN Identity Verification ─────────────────────────────────────────
+
+  /**
+   * Verify vendor's NIN via Identro (primary provider).
+   * If selfieBase64 is provided, also runs a face-match against the NIN record via Identro.
+   * On VERIFIED result + IDENTRO_AUTO_APPROVE_ON_MATCH=true, advances status to NIN_VERIFIED.
+   * Any other result (PENDING, FAILED, NOT_FOUND) stays PENDING for manual admin review.
+   */
+  async verifyNin(userId: number, dto: VendorNinVerifyDto) {
+    const vendor = await this.requireProfile(userId);
+
+    // Data-only NIN check via Identro
+    let verifyResult = await this.identro.verifyNin(dto.ninNumber);
+
+    // Optional face-match via Identro
+    let faceMatchScore: number | undefined;
+    if (dto.selfieBase64) {
+      const faceResult = await this.identro.verifyFace({
+        idNumber: dto.ninNumber,
+        idType: 'NIN',
+        photoBase64: dto.selfieBase64,
+      });
+      faceMatchScore = faceResult.faceMatchScore;
+      // Merge face-match raw data into audit snapshot
+      verifyResult = {
+        ...verifyResult,
+        identroRaw: { ...verifyResult.identroRaw, faceVerification: faceResult.identroRaw },
+      };
+    }
+
+    const identroStatus = verifyResult.identroStatus ?? 'UNVERIFIED';
+    const isAutoApproved = identroStatus === 'VERIFIED' && this.identro.shouldAutoApprove;
+
+    const ninRecord = await this.prisma.vendorNinVerification.upsert({
+      where: { vendorProfileId: vendor.id },
       create: {
-        userId,
-        ...dto,
+        vendorProfileId: vendor.id,
+        ninNumber: dto.ninNumber,
+        qoreidStatus: identroStatus,          // column reused; stores Identro normalised status
+        qoreidReference: verifyResult.identroReference,
+        qoreidRaw: verifyResult.identroRaw as object,
+        ...(faceMatchScore !== undefined && { faceMatchScore }),
+        status: isAutoApproved ? 'APPROVED' : 'PENDING',
       },
-      update: dto,
+      update: {
+        ninNumber: dto.ninNumber,
+        qoreidStatus: identroStatus,
+        qoreidReference: verifyResult.identroReference,
+        qoreidRaw: verifyResult.identroRaw as object,
+        ...(faceMatchScore !== undefined && { faceMatchScore }),
+        status: isAutoApproved ? 'APPROVED' : 'PENDING',
+      },
     });
+
+    if (isAutoApproved) {
+      await this.prisma.vendorProfile.update({
+        where: { id: vendor.id },
+        data: { onboardingStatus: 'NIN_VERIFIED' },
+      });
+      this.logger.log(`VendorProfile ${vendor.id} NIN auto-approved by Identro`);
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: null,
+          action: 'DOCUMENT_AUTO_APPROVED',
+          permission: 'kyc.review',
+          entity: 'VendorNinVerification',
+          entityId: String(ninRecord.id),
+          changes: { identroStatus, faceMatchScore: faceMatchScore ?? null },
+        },
+      });
+    }
+
+    return {
+      id: ninRecord.id,
+      status: ninRecord.status,
+      identroStatus,
+      faceMatchScore: ninRecord.faceMatchScore ?? null,
+    };
+  }
+
+  // ─── KYC: CAC Business Verification ─────────────────────────────────────────
+
+  /**
+   * Verify vendor's business via Identro CAC Basic (primary provider).
+   * If dto.verifyTin is true, also runs optional TIN verification using the same reg number via Identro.
+   * On VERIFIED result + IDENTRO_AUTO_APPROVE_ON_MATCH=true, advances status to CAC_VERIFIED.
+   * Any non-VERIFIED result stays PENDING for manual admin review.
+   */
+  async verifyCac(userId: number, dto: VendorCacVerifyDto) {
+    const vendor = await this.requireProfile(userId);
+
+    // Derive company type from registration number prefix
+    const regUpper = dto.regNumber.toUpperCase();
+    const companyType = regUpper.startsWith('BN')
+      ? 'BUSINESS_NAME'
+      : regUpper.startsWith('IT')
+        ? 'INCORPORATED_TRUSTEES'
+        : 'COMPANY';
+
+    const cacResult = await this.identro.verifyCac(dto.regNumber, companyType);
+
+    // Optional TIN lookup — non-fatal on failure
+    let tinRaw: Record<string, unknown> | undefined;
+    let tinVerified = false;
+    if (dto.verifyTin) {
+      try {
+        tinRaw = await this.identro.verifyTin(dto.regNumber) as Record<string, unknown>;
+        const tinData = (tinRaw as { data?: { status?: string } }).data;
+        tinVerified = this.identro.normaliseStatus(tinData?.status ?? null) === 'VERIFIED';
+      } catch (err) {
+        this.logger.warn(`Optional TIN verification failed for ${dto.regNumber}: ${String(err)}`);
+      }
+    }
+
+    const isAutoApproved = cacResult.identroStatus === 'VERIFIED' && this.identro.shouldAutoApprove;
+
+    const cacRecord = await this.prisma.vendorCacVerification.upsert({
+      where: { vendorProfileId: vendor.id },
+      create: {
+        vendorProfileId: vendor.id,
+        regNumber: dto.regNumber,
+        qoreidStatus: cacResult.identroStatus,    // column reused; stores Identro normalised status
+        qoreidReference: cacResult.identroReference,
+        qoreidRaw: cacResult.identroRaw as object,
+        companyName: cacResult.companyName,
+        companyType: cacResult.companyType,
+        incorporatedAt: cacResult.incorporatedAt,
+        status: isAutoApproved ? 'APPROVED' : 'PENDING',
+        ...(tinRaw !== undefined && { tinQoreidRaw: tinRaw as object, tinVerified }),
+      },
+      update: {
+        regNumber: dto.regNumber,
+        qoreidStatus: cacResult.identroStatus,
+        qoreidReference: cacResult.identroReference,
+        qoreidRaw: cacResult.identroRaw as object,
+        companyName: cacResult.companyName,
+        companyType: cacResult.companyType,
+        incorporatedAt: cacResult.incorporatedAt,
+        status: isAutoApproved ? 'APPROVED' : 'PENDING',
+        ...(tinRaw !== undefined && { tinQoreidRaw: tinRaw as object, tinVerified }),
+      },
+    });
+
+    if (isAutoApproved) {
+      await this.prisma.vendorProfile.update({
+        where: { id: vendor.id },
+        data: { onboardingStatus: 'CAC_VERIFIED' },
+      });
+      this.logger.log(`VendorProfile ${vendor.id} CAC auto-approved by Identro`);
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: null,
+          action: 'DOCUMENT_AUTO_APPROVED',
+          permission: 'kyc.review',
+          entity: 'VendorCacVerification',
+          entityId: String(cacRecord.id),
+          changes: { identroStatus: cacResult.identroStatus, tinVerified },
+        },
+      });
+    }
+
+    return {
+      id: cacRecord.id,
+      status: cacRecord.status,
+      companyName: cacRecord.companyName,
+      companyType: cacRecord.companyType,
+      incorporatedAt: cacRecord.incorporatedAt,
+      tinVerified: cacRecord.tinVerified,
+    };
+  }
+
+  // ─── Submit for Admin Review ─────────────────────────────────────────────────
+
+  /**
+   * Marks the vendor onboarding as UNDER_REVIEW.
+   * Requires NIN and CAC verifications to exist (any status).
+   */
+  async submitForReview(userId: number) {
+    const vendor = await this.prisma.vendorProfile.findUnique({
+      where: { userId },
+      include: { ninVerification: true, cacVerification: true },
+    });
+
+    if (!vendor) {
+      throw new NotFoundException('Vendor profile not found. Please complete your profile first.');
+    }
+
+    if (!vendor.ninVerification) {
+      throw new BadRequestException('NIN identity verification is required before submission.');
+    }
+
+    if (!vendor.cacVerification) {
+      throw new BadRequestException(
+        'Business (CAC) registration verification is required before submission.',
+      );
+    }
+
+    const updated = await this.prisma.vendorProfile.update({
+      where: { id: vendor.id },
+      data: { onboardingStatus: 'UNDER_REVIEW', documentReviewStatus: 'PENDING' },
+    });
+
+    await this.notifications.notifyUser({
+      userId,
+      type: 'VENDOR_APPROVED',
+      title: 'Vendor application submitted',
+      message: 'Your vendor application is now under review. We will notify you once approved.',
+      data: { vendorProfileId: updated.id, status: updated.onboardingStatus },
+      templateKey: 'kycUpdate',
+      templateData: {
+        status: updated.onboardingStatus,
+        message: 'Our team will review your business documents shortly.',
+      },
+    });
+
+    return {
+      id: updated.id,
+      onboardingStatus: updated.onboardingStatus,
+      statusMessage: 'Your vendor application is under review.',
+    };
+  }
+
+  // ─── Internal helpers ────────────────────────────────────────────────────────
+
+  private async requireProfile(userId: number) {
+    const vendor = await this.prisma.vendorProfile.findUnique({ where: { userId } });
+    if (!vendor) {
+      throw new NotFoundException('Vendor profile not found. Please complete your profile first.');
+    }
+    return vendor;
   }
 }

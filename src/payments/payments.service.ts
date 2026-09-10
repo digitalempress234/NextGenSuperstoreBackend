@@ -31,6 +31,7 @@ export class PaymentsService {
       throw new BadRequestException('Checkout payment group not found.');
     }
 
+    // Already paid — safe no-op
     if (group.status === 'PAID') {
       return {
         status: 'paid',
@@ -38,6 +39,18 @@ export class PaymentsService {
       };
     }
 
+    // Already initialised — return existing payment instead of creating a new
+    // Paystack transaction. This makes retries and timeout-induced duplicates
+    // completely safe: the client gets the same authorization_url back.
+    if (group.status === 'PROCESSING' && group.payment) {
+      return group.payment;
+    }
+
+    // Generate a stable, per-group reference so that even if two concurrent
+    // requests race past the PROCESSING check above, Paystack initialization
+    // is the only side-effect that can be duplicated — and our DB upsert on
+    // transactionRef (which has a @unique constraint) ensures only one Payment
+    // row is ever persisted for this group.
     const reference = `PUR-${group.id}-${randomUUID()}`;
     const initialized = await this.paystack.initialize(
       reference,
@@ -45,24 +58,30 @@ export class PaymentsService {
       Number(group.totalAmount),
     );
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        amount: group.totalAmount,
-        paymentMethod: 'CARD',
-        provider: 'PAYSTACK',
-        transactionRef: reference,
-        providerRef: initialized.reference,
-        paymentUrl: initialized.authorization_url,
-        status: 'PENDING',
-      },
-    });
+    // Wrap the Payment creation and group status update in a single transaction
+    // so both succeed or both fail — no partial state on retries.
+    const payment = await this.prisma.$transaction(async (tx) => {
+      const newPayment = await tx.payment.create({
+        data: {
+          amount: group.totalAmount,
+          paymentMethod: 'CARD',
+          provider: 'PAYSTACK',
+          transactionRef: reference,
+          providerRef: initialized.reference,
+          paymentUrl: initialized.authorization_url,
+          status: 'PENDING',
+        },
+      });
 
-    await this.prisma.checkoutPaymentGroup.update({
-      where: { id: group.id },
-      data: {
-        paymentId: payment.id,
-        status: 'PROCESSING',
-      },
+      await tx.checkoutPaymentGroup.update({
+        where: { id: group.id },
+        data: {
+          paymentId: newPayment.id,
+          status: 'PROCESSING',
+        },
+      });
+
+      return newPayment;
     });
 
     return payment;

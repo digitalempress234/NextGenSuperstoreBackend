@@ -78,7 +78,7 @@ export class MarketplaceController {
   @ApiQuery({
     name: 'limit',
     required: false,
-    example: 20,
+    example: 10,
   })
   @OkExample({
     items: [
@@ -114,7 +114,7 @@ export class MarketplaceController {
     ],
     pagination: {
       page: 1,
-      limit: 20,
+      limit: 10,
       total: 1,
       pages: 1,
     },
@@ -172,7 +172,7 @@ export class MarketplaceController {
   @ApiQuery({ name: 'state', required: false, example: 'Lagos' })
   @ApiQuery({ name: 'city', required: false, example: 'Ikeja' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
   @OkExample({
     items: [
       {
@@ -188,7 +188,7 @@ export class MarketplaceController {
     ],
     pagination: {
       page: 1,
-      limit: 20,
+      limit: 10,
       total: 1,
       pages: 1,
     },

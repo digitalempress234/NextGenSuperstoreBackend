@@ -15,6 +15,9 @@ interface CheckoutInput {
   deliveryFee?: number;
 }
 
+/** Items at or below this quantity trigger a low-stock alert to the vendor. */
+const LOW_STOCK_THRESHOLD = 5;
+
 @Injectable()
 export class CheckoutService {
   constructor(
@@ -67,6 +70,13 @@ export class CheckoutService {
     const result = await this.prisma.$transaction(async (tx) => {
       let paymentGroupTotal = 0;
       const orders = [];
+      const stockAlerts: Array<{
+        storeOwnerUserId: number;
+        productName: string;
+        storeName: string;
+        sku: string | null;
+        remaining: number;
+      }> = [];
 
       for (const [storeId, items] of grouped.entries()) {
         for (const item of items) {
@@ -124,11 +134,31 @@ export class CheckoutService {
           },
         });
 
+        // ── Stock decrement + auto-disable when reaching zero ──────────────
+
         for (const item of items) {
-          await tx.storeProduct.update({
+          const updated = await tx.storeProduct.update({
             where: { id: item.storeProductId },
-            data: { stockQuantity: { decrement: item.quantity } },
+            data: {
+              stockQuantity: { decrement: item.quantity },
+              // Auto-hide the product when stock reaches zero
+              ...(item.storeProduct.stockQuantity - item.quantity <= 0
+                ? { availability: false }
+                : {}),
+            },
           });
+
+          const remaining = updated.stockQuantity;
+
+          if (remaining <= LOW_STOCK_THRESHOLD) {
+            stockAlerts.push({
+              storeOwnerUserId: item.storeProduct.store.ownerUserId,
+              productName: item.storeProduct.product.name,
+              storeName: item.storeProduct.store.storeName,
+              sku: item.storeProduct.sku,
+              remaining,
+            });
+          }
         }
 
         if (input.fulfillmentType === 'PICKUP') {
@@ -188,6 +218,7 @@ export class CheckoutService {
       return {
         paymentGroup,
         orders,
+        stockAlerts,
       };
     });
 
@@ -203,6 +234,43 @@ export class CheckoutService {
           templateData: { orderNumber: order.orderNumber, total: String(order.total) },
         }),
       ),
+    );
+
+    // ── Stock alert notifications to vendors ──────────────────────────────
+    // Use allSettled so one failing notification never blocks the others.
+    await Promise.allSettled(
+      result.stockAlerts.map((alert) => {
+        const isOutOfStock = alert.remaining === 0;
+        return this.notifications.notifyUser({
+          userId: alert.storeOwnerUserId,
+          type: 'PRODUCT_OUT_OF_STOCK',
+          priority: isOutOfStock ? 'HIGH' : 'MEDIUM',
+          title: isOutOfStock
+            ? `🚫 ${alert.productName} is out of stock`
+            : `⚠️ Low stock alert: ${alert.productName}`,
+          message: isOutOfStock
+            ? `${alert.productName} in ${alert.storeName} has sold out and has been hidden from customers.`
+            : `${alert.productName} in ${alert.storeName} is running low — only ${alert.remaining} unit(s) left.`,
+          data: {
+            productName: alert.productName,
+            storeName: alert.storeName,
+            remaining: alert.remaining,
+            sku: alert.sku,
+          },
+          // Only send email for out-of-stock (avoid email spam for low-stock).
+          ...(isOutOfStock
+            ? {
+                templateKey: 'lowStock' as const,
+                templateData: {
+                  productName: alert.productName,
+                  storeName: alert.storeName,
+                  remaining: alert.remaining,
+                  sku: alert.sku,
+                },
+              }
+            : {}),
+        });
+      }),
     );
 
     return result;

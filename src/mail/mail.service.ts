@@ -5,6 +5,7 @@ import type { Transporter } from 'nodemailer';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { templates, type EmailTemplateData, type EmailTemplateKey } from './templates';
+import type { RenderedEmail } from './templates/_shared';
 
 @Injectable()
 export class MailService {
@@ -34,10 +35,11 @@ export class MailService {
     data: EmailTemplateData,
     userId?: number,
   ): Promise<void> {
-    const rendered = templates[templateKey]({
+    const templateFn = templates[templateKey] as (data: EmailTemplateData) => RenderedEmail;
+    const rendered = templateFn({
       ...data,
       appName: data.appName ?? this.appName,
-    } as any);
+    });
     const log = await this.prisma.emailLog.create({
       data: {
         userId,
@@ -48,7 +50,8 @@ export class MailService {
     });
 
     try {
-      const from = process.env.MAIL_FROM ?? process.env.SMTP_USER;
+      const senderEmail = process.env.MAIL_FROM ?? process.env.SMTP_USER;
+      const from = `"Superstore" <${senderEmail}>`;
       const result = await this.transporter.sendMail({
         from,
         to,

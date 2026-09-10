@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async overview() {
     const [totalUsers, totalStores, totalOrders, totalRevenueResult, pendingApprovals] =
@@ -148,8 +152,8 @@ export class AdminService {
     });
   }
 
-  approveVendor(userId: number, reviewerId: number, reason?: string) {
-    return this.prisma.$transaction(async (tx) => {
+  async approveVendor(userId: number, reviewerId: number, reason?: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
       const vendor = await tx.vendorProfile.update({
         where: { userId },
         data: {
@@ -179,10 +183,25 @@ export class AdminService {
 
       return vendor;
     });
+
+    // Notify the vendor outside the transaction so a notification failure
+    // does not roll back the approval.
+    await this.notifications.notifyUser({
+      userId,
+      type: 'VENDOR_APPROVED',
+      priority: 'HIGH',
+      title: '🎉 Vendor application approved!',
+      message: 'Congratulations! Your vendor application has been approved. You can now set up your store.',
+      data: { vendorProfileId: result.id, status: 'APPROVED' },
+      templateKey: 'vendorApproval',
+      templateData: { status: 'APPROVED', reason },
+    });
+
+    return result;
   }
 
-  rejectVendor(userId: number, reviewerId: number, reason?: string) {
-    return this.prisma.$transaction(async (tx) => {
+  async rejectVendor(userId: number, reviewerId: number, reason?: string) {
+    const result = await this.prisma.$transaction(async (tx) => {
       const vendor = await tx.vendorProfile.update({
         where: { userId },
         data: {
@@ -203,5 +222,21 @@ export class AdminService {
 
       return vendor;
     });
+
+    // Notify the vendor outside the transaction.
+    await this.notifications.notifyUser({
+      userId,
+      type: 'VENDOR_REJECTED',
+      priority: 'HIGH',
+      title: 'Vendor application not approved',
+      message: reason
+        ? `Your vendor application was not approved. Reason: ${reason}`
+        : 'Your vendor application was not approved. Please check your email for details.',
+      data: { vendorProfileId: result.id, status: 'REJECTED' },
+      templateKey: 'vendorApproval',
+      templateData: { status: 'REJECTED', reason },
+    });
+
+    return result;
   }
 }

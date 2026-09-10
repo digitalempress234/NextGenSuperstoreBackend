@@ -60,6 +60,20 @@ export class UsersService {
         gender: dto.gender,
         dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
       },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        gender: true,
+        dateOfBirth: true,
+        email: true,
+        phoneNumber: true,
+        avatarUrl: true,
+        status: true,
+        isEmailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
   }
 }

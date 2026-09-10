@@ -14,6 +14,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { CheckoutModule } from './checkout/checkout.module';
 import { DeliveryModule } from './delivery/delivery.module';
 import { HealthModule } from './health/health.module';
+import { IdentroModule } from './identro/identro.module';
 import { MailModule } from './mail/mail.module';
 import { LocationsModule } from './locations/locations.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -31,6 +32,7 @@ import { VendorsModule } from './vendors/vendors.module';
 import { JwtGuard } from './auth/jwt.guard';
 import { CsrfGuard } from './common/csrf.guard';
 import { PermissionGuard } from './common/permission.guard';
+import { StaffModule } from './staff/staff.module';
 
 @Module({
   imports: [
@@ -66,6 +68,8 @@ import { PermissionGuard } from './common/permission.guard';
     LocationsModule,
     UploadsModule,
     VendorsModule,
+    StaffModule,
+    IdentroModule,
   ],
   providers: [
     {

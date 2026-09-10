@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from 
 import { ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
+import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
 import { AddCartItemDto, UpdateCartItemDto } from './dto/cart.dto';
 import { CartService } from './cart.service';
@@ -13,6 +14,7 @@ export class CartController {
   constructor(private readonly cartService: CartService) {}
 
   @Get()
+  @RequirePermissions('cart.manage')
   @ApiOperation({ summary: 'Get the authenticated customer cart' })
   @OkExample({
     id: 12,
@@ -33,6 +35,7 @@ export class CartController {
   }
 
   @Post('items')
+  @RequirePermissions('cart.manage')
   @ApiOperation({ summary: 'Add a store-specific product offer to cart' })
   @OkExample({
     id: 91,
@@ -48,6 +51,7 @@ export class CartController {
   }
 
   @Patch('items/:storeProductId')
+  @RequirePermissions('cart.manage')
   @ApiOperation({
     summary: 'Set the quantity of a cart line',
   })
@@ -67,6 +71,7 @@ export class CartController {
   }
 
   @Delete('items')
+  @RequirePermissions('cart.manage')
   @ApiOperation({
     summary: 'Clear all items from the authenticated customer cart',
   })
@@ -77,6 +82,7 @@ export class CartController {
   }
 
   @Delete('items/:storeProductId')
+  @RequirePermissions('cart.manage')
   @ApiOperation({ summary: 'Remove a store-specific product offer from cart' })
   @ApiParam({ name: 'storeProductId', example: 42 })
   @OkExample({ removed: true })

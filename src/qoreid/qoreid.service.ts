@@ -201,6 +201,16 @@ export class QoreIDService {
     };
   }
 
+  /**
+   * Verify TIN (Tax Identification Number) for a company via CAC reg number.
+   * Endpoint: POST /v2/ng/identities/tin/
+   * @param regNumber - Company registration number, same format as CAC (e.g. RC1234)
+   * @returns The raw QoreID response stored verbatim for audit.
+   */
+  async verifyTin(regNumber: string): Promise<Record<string, unknown>> {
+    return this.post<Record<string, unknown>>('/v2/ng/identities/tin/', { regNumber });
+  }
+
   // ─── Internal HTTP helpers ──────────────────────────────────────────────────
 
   private async post<T>(path: string, body: unknown): Promise<T> {

@@ -1,6 +1,6 @@
-# Purse Superstore Backend
+# Superstore Backend
 
-Production-oriented NestJS API for the Purse multi-store marketplace.
+Production-oriented NestJS API for the superstore marketplace.
 
 ## What this revision fixes
 
@@ -247,7 +247,7 @@ Production requires `AUTH_COOKIE_SECURE=true` and HTTPS.
 
 Authentication is cookie-only. No bearer tokens are exposed to frontend JavaScript and no authentication token may be stored in localStorage, sessionStorage, or IndexedDB.
 
-OTP is implemented only for email verification and password recovery. Login does not require OTP. OTPs are hashed, expire, have attempt limits, resend replaces the previous OTP, and successful verification deletes the OTP record. See `context/authentication.md`.
+OTP is implemented only for email verification and password recovery. Login does not require OTP. OTPs are hashed, expire, have attempt limits, resend replaces the previous OTP, and successful verification deletes the OTP record. 
 
 ### Authentication endpoints
 
@@ -268,7 +268,6 @@ Authentication is cookie-only. OTPs are six digits, server-side hashed, time-lim
 ## Legacy bug fixes and Google authentication
 
 The backend includes fixes for the legacy signup/rider issues and Google sign-in/sign-up.
-See `context/legacy-bug-resolution.md` and `context/google-auth.md`.
 
 Google requires a Google Web Client ID in `GOOGLE_CLIENT_ID`. The frontend uses Google Identity Services to obtain an ID token and posts it to `POST /purse/v1/auth/google`; the API verifies the token and then issues only Secure/HttpOnly Purse cookies.
 
@@ -277,17 +276,15 @@ Google requires a Google Web Client ID in `GOOGLE_CLIENT_ID`. The frontend uses 
 
 The repository includes `.circleci/config.yml` and `docker-compose.production.yml`. Pushes to `main` run validation, build an immutable Docker image tagged with the commit SHA, push it to the configured registry, SSH to the production host, apply Prisma migrations, deploy the image, and verify `/purse/health`.
 
-See `context/circleci-deployment.md` for CircleCI context variables, server prerequisites, deployment flow and rollback.
 
 ## CircleCI deployment
 
 CircleCI is configured in `.circleci/config.yml` to test the application, build an immutable Docker image tagged with the Git commit SHA, push it to the configured registry, then SSH into the production server and deploy it using `docker-compose.production.yml` and `ops/deploy-production.sh`.
 
-See `context/circleci-deployment.md` for required CircleCI context variables, SSH setup, production host prerequisites, migration strategy and rollback procedure.
-\n\n## Real-Time Delivery Tracking\nThe API exposes Socket.IO on `/purse/delivery`. The connection authenticates from the Secure/HttpOnly `purse_access_token` cookie. Riders can publish `delivery:location`; authorized customers/riders can join `delivery:join` and receive `delivery.location.updated`. Delivery state transitions emit `delivery.status.updated`. HTTP endpoints provide current-position and history fallback.\n\n## Endpoint Test Coverage\nThe `test/endpoint-cases.ts` inventory lists every controller route. `test/endpoint-coverage.e2e-spec.ts` compares that inventory against the generated Swagger route set and executes the unauthenticated contract for every route when `RUN_FULL_E2E=true`. Critical tracking rules also have unit tests. Run:\n\n```bash\nRUN_FULL_E2E=true npm run test:e2e\n```\n
+
 
 ## Delivery verification
 A delivery requires a customer-provided six-digit delivery code. The code is sent in-app and by email, stored only as a hash, expires, is attempt-limited, and is deleted after successful verification.
 
 ## Structured logging
-The API uses request IDs, structured logs, error logging, Prisma error/query logging controls, and sensitive-field redaction. See `context/logging-observability.md`.
+The API uses request IDs, structured logs, error logging, Prisma error/query logging controls, and sensitive-field redaction

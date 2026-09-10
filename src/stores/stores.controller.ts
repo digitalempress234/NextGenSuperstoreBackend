@@ -182,14 +182,14 @@ export class StoresController {
   @ApiOperation({ summary: 'Get paginated store wallet transaction ledger' })
   @ApiParam({ name: 'id', example: 10 })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 20 })
-  @OkExample({ items: [], total: 0, page: 1, limit: 20 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @OkExample({ items: [], total: 0, page: 1, limit: 10 })
   @StandardErrors()
   getTransactions(
     @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) storeId: number,
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit = 20,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit = 10,
   ) {
     return this.storeWallet.getTransactions(userId, storeId, page, limit);
   }

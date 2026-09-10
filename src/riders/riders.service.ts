@@ -13,23 +13,21 @@ import {
   VerifyGuarantorDocumentDto,
   VerifyRiderDocumentDto,
 } from './dto/rider.dto';
-// [QoreID] — added import
+// [Identro] — primary KYC provider (replaces QoreID for all live verification flows)
+import { IdentroService } from '../identro/identro.service';
+// [QoreID] — secondary/fallback KYC provider
 import { QoreIDService } from '../qoreid/qoreid.service';
 
 @Injectable()
 export class RidersService {
   private readonly logger = new Logger(RidersService.name);
 
-  // [QoreID] Original constructor (kept for rollback):
-  // constructor(
-  //   private readonly prisma: PrismaService,
-  //   private readonly notifications: NotificationsService,
-  //   private readonly banks: BankResolverService,
-  // ) {}
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly banks: BankResolverService,
+    // [Identro] Primary KYC provider injected here.
+    private readonly identro: IdentroService,
     private readonly qoreid: QoreIDService,
   ) {}
 
@@ -283,19 +281,18 @@ export class RidersService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // QoreID KYC methods
-  // Appended below — all methods above are untouched.
+  // Identro KYC methods — primary provider for all live verification flows.
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Mints a short-lived QoreID SDK session token for liveness verification.
-   * Only the `sdkSessionToken` is returned to the client — credentials never leave the server.
+   * Mints a short-lived Identro liveness SDK session token.
+   * Only the `sdkToken` is returned to the client — the API key never leaves the server.
+   * POST /merchant-api/liveness/session
    */
   async mintKycSession(userId: number, dto: MintKycSessionDto) {
     const rider = await this.requireProfile(userId);
 
-    const session = await this.qoreid.mintSdkSessionToken({
-      productCode: dto.productCode,
+    const session = await this.identro.mintSdkSessionToken({
       reference: dto.reference,
       ttlSeconds: dto.ttlSeconds,
       // Use a pseudonymous subject ref — never include PII
@@ -307,23 +304,24 @@ export class RidersService {
       data: {
         riderId: rider.id,
         userId,
-        provider: 'qoreid',
+        provider: 'identro',
         reference: session.sessionId,
         status: 'PENDING',
       },
     });
 
-    // Return only the session token — never expose clientId/secret
+    // Return only the session token — never expose the API key
     return {
-      sdkSessionToken: session.sdkSessionToken,
+      sdkSessionToken: session.sdkToken,
       expiresAt: session.expiresAt,
     };
   }
 
   /**
-   * Triggers automated QoreID identity verification for a specific RiderDocument.
-   * Optionally runs a face-match if a selfie base64 is provided.
-   * If QOREID_AUTO_APPROVE_ON_MATCH=true and QoreID returns VERIFIED, the document is auto-approved.
+   * Triggers automated Identro identity verification for a specific RiderDocument.
+   * Optionally runs a face-match via Identro if a selfie base64 is provided.
+   * If IDENTRO_AUTO_APPROVE_ON_MATCH=true and Identro returns VERIFIED, the document is auto-approved.
+   * Documents with any other status remain PENDING for manual admin review.
    */
   async verifyRiderDocument(userId: number, dto: VerifyRiderDocumentDto) {
     const rider = await this.requireProfile(userId);
@@ -340,52 +338,57 @@ export class RidersService {
       throw new BadRequestException('Document number is required for automated verification.');
     }
 
-    // Dispatch to the correct QoreID endpoint based on document type
+    // Dispatch to the correct Identro endpoint based on document type
     let verifyResult = await this.dispatchDocumentVerify(document.type, document.documentNumber);
 
     // Optionally run face-match if selfie is provided and document type supports it
     let faceMatchScore: number | undefined;
-    if (dto.selfieBase64 && (document.type === 'NIN' || document.type === 'NIN_SLIP')) {
-      const faceResult = await this.qoreid.verifyNinFace({
+    if (
+      dto.selfieBase64 &&
+      (document.type === 'NIN' ||
+        document.type === 'NIN_SLIP' ||
+        document.type === 'NATIONAL_ID' ||
+        document.type === 'DRIVERS_LICENSE')
+    ) {
+      const idType =
+        document.type === 'DRIVERS_LICENSE' ? 'DRIVERS_LICENSE' : 'NIN';
+      const faceResult = await this.identro.verifyFace({
         idNumber: document.documentNumber,
+        idType,
         photoBase64: dto.selfieBase64,
       });
       faceMatchScore = faceResult.faceMatchScore;
-      // Merge face-match response for audit
-      verifyResult = { ...verifyResult, faceVerification: faceResult };
-    } else if (dto.selfieBase64 && document.type === 'DRIVERS_LICENSE') {
-      const faceResult = await this.qoreid.verifyDriversLicenseFace({
-        idNumber: document.documentNumber,
-        photoBase64: dto.selfieBase64,
-      });
-      faceMatchScore = faceResult.faceMatchScore;
-      verifyResult = { ...verifyResult, faceVerification: faceResult };
+      // Merge face-match result into the raw snapshot for the audit trail
+      verifyResult = {
+        ...verifyResult,
+        identroRaw: { ...verifyResult.identroRaw, faceVerification: faceResult.identroRaw },
+      };
     }
 
-    const qoreidStatus = verifyResult.summary?.status ?? 'UNVERIFIED';
-    const shouldApprove = qoreidStatus === 'VERIFIED' && this.qoreid.shouldAutoApprove;
+    const identroStatus = verifyResult.identroStatus ?? 'UNVERIFIED';
+    const shouldApprove = identroStatus === 'VERIFIED' && this.identro.shouldAutoApprove;
 
     const updated = await this.prisma.riderDocument.update({
       where: { id: document.id },
       data: {
-        qoreidStatus,
-        qoreidReference: verifyResult.summary?.state ?? null,
-        qoreidRaw: verifyResult as object,
+        qoreidStatus: identroStatus,            // column reused; stores Identro normalised status
+        qoreidReference: verifyResult.identroReference,
+        qoreidRaw: verifyResult.identroRaw as object,
         ...(faceMatchScore !== undefined && { faceMatchScore }),
         ...(shouldApprove && { status: 'APPROVED' }),
       },
     });
 
     if (shouldApprove) {
-      this.logger.log(`RiderDocument ${document.id} auto-approved by QoreID (status=VERIFIED)`);
+      this.logger.log(`RiderDocument ${document.id} auto-approved by Identro (status=VERIFIED)`);
       await this.prisma.auditLog.create({
         data: {
-          actorId: null, // system action
+          actorId: null,
           action: 'DOCUMENT_AUTO_APPROVED',
           permission: 'kyc.review',
           entity: 'RiderDocument',
           entityId: String(document.id),
-          changes: { qoreidStatus, faceMatchScore: faceMatchScore ?? null },
+          changes: { identroStatus, faceMatchScore: faceMatchScore ?? null },
         },
       });
     }
@@ -394,8 +397,9 @@ export class RidersService {
   }
 
   /**
-   * Triggers automated QoreID name/ID check on a GuarantorDocument.
+   * Triggers automated Identro name/ID check on a GuarantorDocument.
    * No face-match — the guarantor is not present during onboarding.
+   * PENDING result stays PENDING for manual admin review; only VERIFIED auto-approves.
    */
   async verifyGuarantorDocument(userId: number, dto: VerifyGuarantorDocumentDto) {
     const rider = await this.requireProfile(userId);
@@ -418,21 +422,21 @@ export class RidersService {
 
     const verifyResult = await this.dispatchDocumentVerify(document.type, document.documentNumber);
 
-    const qoreidStatus = verifyResult.summary?.status ?? 'UNVERIFIED';
-    const shouldApprove = qoreidStatus === 'VERIFIED' && this.qoreid.shouldAutoApprove;
+    const identroStatus = verifyResult.identroStatus ?? 'UNVERIFIED';
+    const shouldApprove = identroStatus === 'VERIFIED' && this.identro.shouldAutoApprove;
 
     const updated = await this.prisma.guarantorDocument.update({
       where: { id: document.id },
       data: {
-        qoreidStatus,
-        qoreidReference: verifyResult.summary?.state ?? null,
-        qoreidRaw: verifyResult as object,
+        qoreidStatus: identroStatus,
+        qoreidReference: verifyResult.identroReference,
+        qoreidRaw: verifyResult.identroRaw as object,
         ...(shouldApprove && { status: 'APPROVED' }),
       },
     });
 
     if (shouldApprove) {
-      this.logger.log(`GuarantorDocument ${document.id} auto-approved by QoreID (status=VERIFIED)`);
+      this.logger.log(`GuarantorDocument ${document.id} auto-approved by Identro (status=VERIFIED)`);
       await this.prisma.auditLog.create({
         data: {
           actorId: null,
@@ -440,7 +444,7 @@ export class RidersService {
           permission: 'kyc.review',
           entity: 'GuarantorDocument',
           entityId: String(document.id),
-          changes: { qoreidStatus },
+          changes: { identroStatus },
         },
       });
     }
@@ -449,21 +453,23 @@ export class RidersService {
   }
 
   /**
-   * Internal helper — routes a document verification call to the correct QoreID method.
-   * Guarantor callers do not pass selfieBase64 (no face check).
+   * Internal helper — routes a document verification call to the correct Identro endpoint.
+   * Guarantor callers never pass selfieBase64 (no face check).
    */
   private async dispatchDocumentVerify(type: string, idNumber: string) {
     switch (type) {
       case 'NIN':
       case 'NIN_SLIP':
       case 'NATIONAL_ID':
-        return this.qoreid.verifyNin(idNumber, { firstname: '', lastname: '' });
+        return this.identro.verifyNin(idNumber);
       case 'DRIVERS_LICENSE':
-        return this.qoreid.verifyDriversLicense(idNumber, { firstname: '', lastname: '' });
+        return this.identro.verifyDriversLicense(idNumber);
       case 'VOTERS_CARD':
-        return this.qoreid.verifyVotersCard(idNumber, { firstname: '', lastname: '', dob: '' });
+        return this.identro.verifyVotersCard(idNumber);
       case 'INTERNATIONAL_PASSPORT':
-        return this.qoreid.verifyPassport(idNumber, { firstname: '', lastname: '' });
+        // Identro does not expose a dedicated passport endpoint; fall back to NIN flow
+        // or replace with passport endpoint once Identro publishes it.
+        return this.identro.verifyNin(idNumber);
       default:
         throw new BadRequestException(
           `Document type "${type}" is not supported for automated verification.`,

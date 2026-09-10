@@ -44,7 +44,7 @@ export class RiderWalletService {
 
   // ─── Ledger ───────────────────────────────────────────────────────────────────
 
-  async getTransactions(userId: number, page = 1, limit = 20) {
+  async getTransactions(userId: number, page = 1, limit = 10) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) return { items: [], total: 0, page, limit };
 

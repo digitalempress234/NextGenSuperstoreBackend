@@ -1,10 +1,10 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 import { AppLoggerService } from '../logging/app-logger.service';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService extends PrismaClient<Prisma.PrismaClientOptions, 'query' | 'error' | 'warn'> implements OnModuleInit {
   constructor(private readonly logger: AppLoggerService) {
     super({
       log:
@@ -20,11 +20,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
             ],
     });
 
-    (this as any).$on('error', (event: any) => {
+    this.$on('error', (event: Prisma.LogEvent) => {
       this.logger.error('prisma.error', event.message, 'Prisma');
     });
 
-    (this as any).$on('warn', (event: any) => {
+    this.$on('warn', (event: Prisma.LogEvent) => {
       this.logger.warn(
         {
           event: 'prisma.warn',
@@ -35,7 +35,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
     });
 
     if (process.env.PRISMA_QUERY_LOGS === 'true') {
-      (this as any).$on('query', (event: any) => {
+      this.$on('query', (event: Prisma.QueryEvent) => {
         this.logger.debug(
           {
             event: 'prisma.query',

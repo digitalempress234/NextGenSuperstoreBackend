@@ -16,7 +16,7 @@ import { MarketplaceModule } from '../marketplace/marketplace.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OrdersModule } from '../orders/orders.module';
 import { PaymentsModule } from '../payments/payments.module';
-import { QoreidModule } from '../qoreid/qoreid.module';
+import { QoreIDModule } from '../qoreid/qoreid.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ReviewsModule } from '../reviews/reviews.module';
 import { RidersModule } from '../riders/riders.module';
@@ -25,30 +25,62 @@ import { StoresModule } from '../stores/stores.module';
 import { UploadsModule } from '../uploads/uploads.module';
 import { UsersModule } from '../users/users.module';
 import { VendorsModule } from '../vendors/vendors.module';
+import { StaffModule } from '../staff/staff.module';
 
 export function setupScalarDocs(app: INestApplication) {
   const baseConfig = new DocumentBuilder()
     .setTitle('Purse Superstore API')
     .setVersion('1.0.0')
-    .setContact('Purse Engineering', 'https://api.syroltech.com/purse', 'support@syroltech.com')
+    // .setContact('Purse Engineering', 'https://api.syroltech.com/purse', 'support@syroltech.com')
     .addCookieAuth(
       'purse_access_token',
       {
         type: 'apiKey',
         in: 'cookie',
-        description: 'HttpOnly secure authentication cookie.',
+        name: 'purse_access_token',
+        description: 'Customer and Merchant Authentication Cookie',
       },
       'purse_access_token',
     )
-    .addServer('https://api.syroltech.com/purse', 'Production')
-    .addServer('http://localhost:8084/purse', 'Local development');
+    .addCookieAuth(
+      'purse_staff_token',
+      {
+        type: 'apiKey',
+        in: 'cookie',
+        name: 'purse_staff_token',
+        description: 'Admin and Staff Authentication Cookie',
+      },
+      'purse_staff_token',
+    )
+    // .addServer('https://api.syroltech.com/purse', 'Production')
+    // .addServer('http://localhost:8084/purse', 'Local development');
 
   // 1. Admin API
   const adminConfig = baseConfig
-    .setDescription('API for Administrators and Support Staff.')
+    .setDescription(
+      'API for System Administrators and Back-Office Staff. ' +
+      'Includes staff authentication, RBAC, KYC approvals, and auditing.',
+    )
     .build();
   const adminDocument = SwaggerModule.createDocument(app, adminConfig, {
-    include: [AdminModule, ApprovalsModule, AuditModule, RbacModule, HealthModule, SettlementsModule, QoreidModule],
+    include: [
+      AdminModule,
+      ApprovalsModule,
+      AuditModule,
+      RbacModule,
+      StaffModule,
+      HealthModule,
+      SettlementsModule,
+      QoreIDModule,
+      // Modules with admin-facing endpoints
+      OrdersModule,
+      StoresModule,
+      RidersModule,
+      UsersModule,
+      VendorsModule,
+      NotificationsModule,
+      CatalogModule,
+    ],
   });
   app.use(
     '/docs/admin',
@@ -65,8 +97,24 @@ export function setupScalarDocs(app: INestApplication) {
   // 2. Store API
   const storeConfig = baseConfig.setDescription('API for Store Owners and Managers.').build();
   const storeDocument = SwaggerModule.createDocument(app, storeConfig, {
-    include: [StoresModule, VendorsModule, CatalogModule, OrdersModule, UploadsModule, NotificationsModule, SettlementsModule],
+    include: [StoresModule, VendorsModule, CatalogModule, UploadsModule, NotificationsModule, SettlementsModule],
   });
+
+  // Filter out any admin endpoints (e.g. from VendorsModule) and public lists
+  if (storeDocument.paths) {
+    Object.keys(storeDocument.paths).forEach((path) => {
+      if (path.startsWith('/admin')) {
+        delete storeDocument.paths[path];
+      }
+      // Remove the public GET /stores list from the store manager's dashboard
+      if (path === '/stores' && storeDocument.paths[path].get) {
+        delete storeDocument.paths[path].get;
+        if (Object.keys(storeDocument.paths[path]).length === 0) {
+          delete storeDocument.paths[path];
+        }
+      }
+    });
+  }
   app.use(
     '/docs/store',
     apiReference({
@@ -82,8 +130,18 @@ export function setupScalarDocs(app: INestApplication) {
   // 3. Rider API
   const riderConfig = baseConfig.setDescription('API for Delivery Personnel.').build();
   const riderDocument = SwaggerModule.createDocument(app, riderConfig, {
-    include: [RidersModule, DeliveryModule, NotificationsModule, QoreidModule],
+    include: [RidersModule, DeliveryModule, NotificationsModule],
   });
+
+  // Filter out any admin endpoints
+  if (riderDocument.paths) {
+    Object.keys(riderDocument.paths).forEach((path) => {
+      if (path.startsWith('/admin')) {
+        delete riderDocument.paths[path];
+      }
+    });
+  }
+
   app.use(
     '/docs/rider',
     apiReference({
@@ -106,6 +164,7 @@ export function setupScalarDocs(app: INestApplication) {
       CartModule,
       CheckoutModule,
       PaymentsModule,
+      OrdersModule,
       ReviewsModule,
       LocationsModule,
       NotificationsModule,

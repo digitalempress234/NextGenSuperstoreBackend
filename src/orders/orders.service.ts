@@ -66,6 +66,139 @@ export class OrdersService {
     return order;
   }
 
+  async track(userId: number, id: number) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        store: {
+          select: {
+            id: true,
+            storeName: true,
+            phone: true,
+            address: true,
+            city: true,
+            state: true,
+          },
+        },
+        statusHistory: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            fromStatus: true,
+            toStatus: true,
+            reason: true,
+            createdAt: true,
+          },
+        },
+        delivery: {
+          select: {
+            id: true,
+            status: true,
+            deliveryAddress: true,
+            deliveryCity: true,
+            deliveryState: true,
+            assignedAt: true,
+            pickedUpAt: true,
+            deliveredAt: true,
+            trackingMapUrl: true,
+            statusUpdates: {
+              orderBy: { occurredAt: 'asc' },
+              select: {
+                status: true,
+                location: true,
+                note: true,
+                occurredAt: true,
+              },
+            },
+          },
+        },
+        pickup: {
+          select: {
+            status: true,
+            qrToken: true,
+            expiresAt: true,
+            preparedAt: true,
+            collectedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found.');
+    }
+
+    if (order.userId !== userId) {
+      throw new ForbiddenException('You do not have access to this order.');
+    }
+
+    // Fetch the latest GPS ping for active deliveries
+    let latestLocation: {
+      latitude: number;
+      longitude: number;
+      accuracyM: number | null;
+      speedKph: number | null;
+      headingDeg: number | null;
+      recordedAt: Date;
+    } | null = null;
+
+    if (order.delivery) {
+      const loc = await this.prisma.deliveryLocation.findFirst({
+        where: { deliveryId: order.delivery.id },
+        orderBy: { recordedAt: 'desc' },
+        select: {
+          latitude: true,
+          longitude: true,
+          accuracyM: true,
+          speedKph: true,
+          headingDeg: true,
+          recordedAt: true,
+        },
+      });
+
+      if (loc) {
+        latestLocation = {
+          latitude: Number(loc.latitude),
+          longitude: Number(loc.longitude),
+          accuracyM: loc.accuracyM == null ? null : Number(loc.accuracyM),
+          speedKph: loc.speedKph == null ? null : Number(loc.speedKph),
+          headingDeg: loc.headingDeg == null ? null : Number(loc.headingDeg),
+          recordedAt: loc.recordedAt,
+        };
+      }
+    }
+
+    return {
+      order: {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        fulfillmentType: order.fulfillmentType,
+        currentStatus: order.currentStatus,
+        placedAt: order.placedAt,
+        updatedAt: order.updatedAt,
+        store: order.store,
+        statusHistory: order.statusHistory,
+      },
+      delivery: order.delivery
+        ? {
+            ...order.delivery,
+            latestLocation,
+          }
+        : null,
+      pickup: order.pickup ?? null,
+      // Hints for the mobile app to connect to the real-time WebSocket
+      websocket:
+        order.delivery
+          ? {
+              namespace: '/delivery',
+              joinEvent: 'delivery:join',
+              payload: { deliveryId: order.delivery.id },
+              locationEvent: 'delivery.location.updated',
+              statusEvent: 'delivery.status.updated',
+            }
+          : null,
+    };
+  }
+
   async setStatus(actorId: number, id: number, status: OrderStatus, reason?: string) {
     const order = await this.prisma.order.findUnique({ where: { id } });
 

@@ -78,9 +78,9 @@ export class ProductSearchDto {
   @IsInt()
   page = 1;
 
-  @ApiPropertyOptional({ example: 20, default: 20 })
+  @ApiPropertyOptional({ example: 10, default: 20 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  limit = 20;
+  limit = 10;
 }

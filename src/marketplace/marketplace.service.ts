@@ -33,6 +33,17 @@ export class MarketplaceService {
           state: true,
           city: true,
           imageUrl: true,
+          images: {
+            select: {
+              id: true,
+              storeId: true,
+              url: true,
+              publicId: true,
+              sortOrder: true,
+              createdAt: true,
+            },
+            orderBy: { sortOrder: 'asc' },
+          },
           latitude: true,
           longitude: true,
         },
@@ -285,6 +296,7 @@ export class MarketplaceService {
         take: limit,
         include: {
           category: true,
+          images: { orderBy: { sortOrder: 'asc' } },
           _count: {
             select: {
               products: true,
@@ -316,6 +328,7 @@ export class MarketplaceService {
       },
       include: {
         category: true,
+        images: { orderBy: { sortOrder: 'asc' } },
         products: {
           where: {
             isActive: true,

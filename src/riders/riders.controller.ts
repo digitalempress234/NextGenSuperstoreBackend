@@ -228,13 +228,13 @@ export class RidersController {
   @Get('wallet/transactions')
   @ApiOperation({ summary: 'Get rider wallet transaction ledger' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 20 })
-  @OkExample({ items: [], total: 0, page: 1, limit: 20 })
+  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @OkExample({ items: [], total: 0, page: 1, limit: 10 })
   @StandardErrors()
   getTransactions(
     @CurrentUser('id') userId: number,
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit = 20,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit = 10,
   ) {
     return this.riderWallet.getTransactions(userId, page, limit);
   }

@@ -27,6 +27,15 @@ export class JwtGuard implements CanActivate {
       return true;
     }
 
+    const isAdminRoute = this.reflector.getAllAndOverride<boolean>('isAdminRoute', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    if (isAdminRoute) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest();
     const token = request.cookies?.purse_access_token as string | undefined;
 
