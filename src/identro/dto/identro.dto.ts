@@ -40,9 +40,10 @@ export interface IdentroLivenessSessionResponse {
 
 // ── NIN ───────────────────────────────────────────────────────────────────────
 
-/** Request body for POST /merchant-api/nin */
+/** Request body for POST /merchant-api/nin/verify */
 export interface IdentroNinRequest {
-  idNumber: string;
+  /** NIN number — field name is `nin` (not `idNumber`) as confirmed from live Identro API */
+  nin: string;
   firstname?: string;
   lastname?: string;
   idempotencyKey?: string;
@@ -61,9 +62,10 @@ export type IdentroNinResponse = IdentroResponse<IdentroNinData>;
 
 // ── Driver License ────────────────────────────────────────────────────────────
 
-/** Request body for POST /merchant-api/driver-license */
+/** Request body for POST /merchant-api/driver-license/verify */
 export interface IdentroDriversLicenseRequest {
-  idNumber: string;
+  /** Field name is `licenseNumber` (not `idNumber`) — confirmed from live Identro API */
+  licenseNumber: string;
   firstname?: string;
   lastname?: string;
   idempotencyKey?: string;
@@ -80,7 +82,7 @@ export type IdentroDriversLicenseResponse = IdentroResponse<IdentroDriversLicens
 
 // ── Voter's Card ──────────────────────────────────────────────────────────────
 
-/** Request body for POST /merchant-api/voters-card */
+/** Request body for POST /merchant-api/voters-card/verify — field vin confirmed from live API */
 export interface IdentroVotersCardRequest {
   vin: string;
   firstname?: string;

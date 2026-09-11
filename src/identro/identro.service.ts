@@ -78,14 +78,15 @@ export class IdentroService {
 
   /**
    * Verify a NIN number via Identro.
-   * POST /merchant-api/nin
+   * POST /merchant-api/nin/verify
+   * Field: nin (not idNumber — confirmed from live API)
    */
   async verifyNin(
-    idNumber: string,
+    nin: string,
     opts: { firstname?: string; lastname?: string; idempotencyKey?: string } = {},
   ): Promise<IdentroIdentityExtracted> {
-    const raw = await this.post<IdentroNinResponse>('/merchant-api/nin', {
-      idNumber,
+    const raw = await this.post<IdentroNinResponse>('/merchant-api/nin/verify', {
+      nin,
       consentCaptured: true,
       ...opts,
     });
@@ -94,14 +95,15 @@ export class IdentroService {
 
   /**
    * Verify a driver's license via Identro.
-   * POST /merchant-api/driver-license
+   * POST /merchant-api/driver-license/verify
+   * Field: licenseNumber (confirmed from live API — not idNumber)
    */
   async verifyDriversLicense(
-    idNumber: string,
+    licenseNumber: string,
     opts: { firstname?: string; lastname?: string; idempotencyKey?: string } = {},
   ): Promise<IdentroIdentityExtracted> {
-    const raw = await this.post<IdentroDriversLicenseResponse>('/merchant-api/driver-license', {
-      idNumber,
+    const raw = await this.post<IdentroDriversLicenseResponse>('/merchant-api/driver-license/verify', {
+      licenseNumber,
       consentCaptured: true,
       ...opts,
     });
@@ -110,13 +112,14 @@ export class IdentroService {
 
   /**
    * Verify a voter's card (VIN) via Identro.
-   * POST /merchant-api/voters-card
+   * POST /merchant-api/voters-card/verify
+   * Field: vin (confirmed from live API)
    */
   async verifyVotersCard(
     vin: string,
     opts: { firstname?: string; lastname?: string; dob?: string; idempotencyKey?: string } = {},
   ): Promise<IdentroIdentityExtracted> {
-    const raw = await this.post<IdentroVotersCardResponse>('/merchant-api/voters-card', {
+    const raw = await this.post<IdentroVotersCardResponse>('/merchant-api/voters-card/verify', {
       vin,
       consentCaptured: true,
       ...opts,

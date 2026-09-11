@@ -456,20 +456,23 @@ export class RidersService {
    * Internal helper — routes a document verification call to the correct Identro endpoint.
    * Guarantor callers never pass selfieBase64 (no face check).
    */
-  private async dispatchDocumentVerify(type: string, idNumber: string) {
+  private async dispatchDocumentVerify(type: string, documentNumber: string) {
     switch (type) {
       case 'NIN':
       case 'NIN_SLIP':
       case 'NATIONAL_ID':
-        return this.identro.verifyNin(idNumber);
+        // Identro field: nin (path: /merchant-api/nin/verify)
+        return this.identro.verifyNin(documentNumber);
       case 'DRIVERS_LICENSE':
-        return this.identro.verifyDriversLicense(idNumber);
+        // Identro field: licenseNumber (path: /merchant-api/driver-license/verify)
+        return this.identro.verifyDriversLicense(documentNumber);
       case 'VOTERS_CARD':
-        return this.identro.verifyVotersCard(idNumber);
+        // Identro field: vin (path: /merchant-api/voters-card/verify — confirmed from live API)
+        return this.identro.verifyVotersCard(documentNumber);
       case 'INTERNATIONAL_PASSPORT':
-        // Identro does not expose a dedicated passport endpoint; fall back to NIN flow
-        // or replace with passport endpoint once Identro publishes it.
-        return this.identro.verifyNin(idNumber);
+        // Identro does not expose a dedicated passport endpoint yet.
+        // Falls back to NIN flow until Identro publishes it.
+        return this.identro.verifyNin(documentNumber);
       default:
         throw new BadRequestException(
           `Document type "${type}" is not supported for automated verification.`,
