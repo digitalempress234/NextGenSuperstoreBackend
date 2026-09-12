@@ -36,15 +36,12 @@ import {
   UpdateStaffUserDto,
 } from './dto/staff.dto';
 
-/** Extracts the authenticated staff user (or a single property) from request.staffUser. */
 const CurrentStaff = createParamDecorator(
   (property: keyof AuthenticatedStaff | undefined, ctx: ExecutionContext): unknown => {
     const req = ctx.switchToHttp().getRequest<{ staffUser: AuthenticatedStaff }>();
     return property ? req.staffUser?.[property] : req.staffUser;
   },
 );
-
-// ─── Auth Endpoints ───────────────────────────────────────────────────────────
 
 @ApiTags('Admin Auth')
 @Controller('admin/auth')
@@ -76,7 +73,7 @@ export class StaffAuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, // 15 minutes — same as JWT_ACCESS_TTL
+      maxAge: 15 * 60 * 1000, 
     });
 
     const { accessToken: _, ...safeResult } = result;
@@ -125,8 +122,6 @@ export class StaffAuthController {
     return this.staffService.changePassword(staffId, dto);
   }
 }
-
-// ─── Management Endpoints ─────────────────────────────────────────────────────
 
 @ApiTags('Admin Staff Management')
 @ApiCookieAuth('purse_staff_token')

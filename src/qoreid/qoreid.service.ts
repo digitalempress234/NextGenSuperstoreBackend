@@ -16,13 +16,10 @@ import type {
   VotersCardVerifyRequest,
 } from './dto/qoreid.dto';
 
-/** Redis key used to cache the QoreID bearer token. */
 const TOKEN_CACHE_KEY = 'qoreid:bearer_token';
 
-/** Buffer (seconds) subtracted from the token TTL before caching, to avoid using an expired token. */
 const TOKEN_TTL_BUFFER_SECONDS = 60;
 
-/** Default token TTL assumed when QoreID does not return expiresIn. */
 const DEFAULT_TOKEN_TTL_SECONDS = 3600;
 
 @Injectable()
@@ -43,12 +40,9 @@ export class QoreIDService {
     this.autoApproveOnMatch = this.config.get<string>('QOREID_AUTO_APPROVE_ON_MATCH') === 'true';
   }
 
-  // ─── Token Management ───────────────────────────────────────────────────────
+  
 
-  /**
-   * Returns a valid QoreID bearer token.
-   * Fetches a new one from /token only when the cached entry has expired.
-   */
+  
   async getToken(): Promise<string> {
     const cached = await this.redis.get<string>(TOKEN_CACHE_KEY);
     if (cached) {
@@ -79,18 +73,14 @@ export class QoreIDService {
     return body.accessToken;
   }
 
-  /** Whether QOREID_AUTO_APPROVE_ON_MATCH is enabled. Consumed by RidersService. */
+  
   get shouldAutoApprove(): boolean {
     return this.autoApproveOnMatch;
   }
 
-  // ─── SDK Session (Liveness) ─────────────────────────────────────────────────
+  
 
-  /**
-   * Mints a short-lived, single-use SDK session token.
-   * Only the resulting sdkSessionToken should ever be forwarded to the mobile client.
-   * Authenticates via HTTP Basic (clientId:secret) as required by QoreID docs.
-   */
+  
   async mintSdkSessionToken(dto: MintSdkSessionRequest): Promise<MintSdkSessionResponse> {
     const credentials = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
 
@@ -112,9 +102,9 @@ export class QoreIDService {
     return (await response.json()) as MintSdkSessionResponse;
   }
 
-  // ─── Identity Verification ──────────────────────────────────────────────────
+  
 
-  /** Verify a NIN number against QoreID. */
+  
   async verifyNin(
     idNumber: string,
     data: Omit<NinVerifyRequest, 'idNumber'>,
@@ -125,7 +115,7 @@ export class QoreIDService {
     );
   }
 
-  /** Verify a driver's license against QoreID. */
+  
   async verifyDriversLicense(
     idNumber: string,
     data: Omit<DriversLicenseVerifyRequest, 'idNumber'>,
@@ -136,7 +126,7 @@ export class QoreIDService {
     );
   }
 
-  /** Verify a voter's card (VIN) against QoreID. */
+  
   async verifyVotersCard(
     vin: string,
     data: Omit<VotersCardVerifyRequest, 'vin'>,
@@ -147,7 +137,7 @@ export class QoreIDService {
     );
   }
 
-  /** Verify a Nigerian passport against QoreID. */
+  
   async verifyPassport(
     passportNumber: string,
     data: Omit<PassportVerifyRequest, 'passportNumber'>,
@@ -158,14 +148,14 @@ export class QoreIDService {
     );
   }
 
-  // ─── Face Verification ──────────────────────────────────────────────────────
+  
 
-  /** Face-match a selfie against a NIN record. */
+  
   async verifyNinFace(dto: FaceVerifyRequest): Promise<QoreIdIdentityResponse> {
     return this.post<QoreIdIdentityResponse>('/v1/ng/identities/face-verification/nin', dto);
   }
 
-  /** Face-match a selfie against a driver's license record. */
+  
   async verifyDriversLicenseFace(dto: FaceVerifyRequest): Promise<QoreIdIdentityResponse> {
     return this.post<QoreIdIdentityResponse>(
       '/v1/ng/identities/face-verification/drivers-license',
@@ -173,19 +163,14 @@ export class QoreIDService {
     );
   }
 
-  // ─── CAC (Company/Business Verification) ────────────────────────────────────
+  
 
-  /**
-   * Verify a Nigerian company/business via QoreID CAC Basic.
-   * Endpoint: POST /v1/ng/identities/cac-basic
-   * @param regNumber - Registration number e.g. RC1234, BN1234, IT1234
-   * @returns Normalised fields ready to persist in StoreCacVerification.
-   */
+  
   async verifyCac(regNumber: string): Promise<CacBasicExtracted> {
     const body: CacBasicRequest = { regNumber };
     const raw = await this.post<Record<string, unknown>>('/v1/ng/identities/cac-basic', body);
 
-    // QoreID wraps the status inside a `summary` object
+    
     const summary = raw['summary'] as Record<string, unknown> | undefined;
     const data = raw['data'] as Record<string, unknown> | undefined;
 
@@ -201,17 +186,12 @@ export class QoreIDService {
     };
   }
 
-  /**
-   * Verify TIN (Tax Identification Number) for a company via CAC reg number.
-   * Endpoint: POST /v2/ng/identities/tin/
-   * @param regNumber - Company registration number, same format as CAC (e.g. RC1234)
-   * @returns The raw QoreID response stored verbatim for audit.
-   */
+  
   async verifyTin(regNumber: string): Promise<Record<string, unknown>> {
     return this.post<Record<string, unknown>>('/v2/ng/identities/tin/', { regNumber });
   }
 
-  // ─── Internal HTTP helpers ──────────────────────────────────────────────────
+  
 
   private async post<T>(path: string, body: unknown): Promise<T> {
     const token = await this.getToken();

@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { StaffRole } from '@prisma/client';
+import { Prisma, StaffRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 
@@ -19,9 +19,6 @@ import {
   StaffLoginDto,
   UpdateStaffUserDto,
 } from './dto/staff.dto';
-
-// ─── Role → Permission mapping ────────────────────────────────────────────────
-// Mirrors the seed file's rolePermissions for admin roles.
 
 const STAFF_PERMISSIONS: Record<StaffRole, string[]> = {
   SUPER_ADMIN: ['admin.*'],
@@ -72,8 +69,6 @@ export function getStaffPermissions(role: StaffRole): string[] {
   return STAFF_PERMISSIONS[role] ?? [];
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
 @Injectable()
 export class StaffService {
   constructor(
@@ -83,7 +78,7 @@ export class StaffService {
     private readonly mail: MailService,
   ) {}
 
-  // ── Auth ────────────────────────────────────────────────────────────────────
+  
 
   async login(dto: StaffLoginDto, ipAddress?: string, userAgent?: string) {
     const email = dto.email.trim().toLowerCase();
@@ -167,7 +162,7 @@ export class StaffService {
         where: { id: staffId },
         data: { passwordHash, mustChangePassword: false },
       }),
-      // Revoke all other sessions on password change
+      
       this.prisma.staffSession.updateMany({
         where: { staffUserId: staffId, revokedAt: null },
         data: { revokedAt: new Date() },
@@ -177,7 +172,7 @@ export class StaffService {
     return { passwordChanged: true };
   }
 
-  // ── CRUD ────────────────────────────────────────────────────────────────────
+  
 
   async create(dto: CreateStaffUserDto, createdById: number) {
     const email = dto.email.trim().toLowerCase();
@@ -211,7 +206,7 @@ export class StaffService {
       },
     });
 
-    // Send welcome email with temporary credentials
+    
     const loginUrl = this.config.get<string>('STAFF_PORTAL_URL', 'https://admin.purse.com/login');
     await this.mail.sendTemplate(
       'staffWelcome',
@@ -223,7 +218,7 @@ export class StaffService {
         role: dto.role,
         loginUrl,
       },
-      // No userId — StaffUser is not in the User table, so no emailLog entry
+      
     );
 
     return {
@@ -323,7 +318,7 @@ export class StaffService {
         permission: 'roles.assign',
         entity: 'StaffUser',
         entityId: String(id),
-        changes: dto as unknown as import('@prisma/client').Prisma.InputJsonValue,
+        changes: dto as unknown as Prisma.InputJsonValue,
       },
     });
 
@@ -342,7 +337,7 @@ export class StaffService {
       data: { status: 'INACTIVE' },
     });
 
-    // Revoke all active sessions
+    
     await this.prisma.staffSession.updateMany({
       where: { staffUserId: id, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -362,7 +357,7 @@ export class StaffService {
     return { id: updated.id, status: updated.status, deactivated: true };
   }
 
-  // ── Internals ────────────────────────────────────────────────────────────────
+  
 
   private async issueTokens(
     staffId: number,
@@ -372,7 +367,7 @@ export class StaffService {
   ) {
     const sessionSecret = randomBytes(32).toString('hex');
     const sessionTokenHash = createHash('sha256').update(sessionSecret).digest('hex');
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); 
 
     const session = await this.prisma.staffSession.create({
       data: { staffUserId: staffId, sessionTokenHash, expiresAt, ipAddress, userAgent },
@@ -389,7 +384,7 @@ export class StaffService {
     return { accessToken, sessionId: session.id };
   }
 
-  /** Validates a session from the staff JWT guard. Returns the staff user. */
+  
   async validateSession(staffId: number, sessionId: number) {
     const session = await this.prisma.staffSession.findUnique({ where: { id: sessionId } });
 
@@ -423,7 +418,7 @@ export class StaffService {
 
     const pick = (chars: string) => chars[Math.floor(Math.random() * chars.length)];
 
-    // Guarantee at least one of each character class
+    
     const required = [pick(upper), pick(lower), pick(digits), pick(symbols)];
     const rest = Array.from({ length: 8 }, () => pick(all));
 

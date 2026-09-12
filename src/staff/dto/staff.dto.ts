@@ -9,8 +9,6 @@ import {
 } from 'class-validator';
 import { StaffRole } from '@prisma/client';
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-
 export class StaffLoginDto {
   @ApiProperty({ example: 'admin@purse.com' })
   @IsEmail()
@@ -31,8 +29,6 @@ export class StaffChangePasswordDto {
   @MinLength(8)
   newPassword!: string;
 }
-
-// ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 export class CreateStaffUserDto {
   @ApiProperty({ example: 'jane.doe@purse.com' })

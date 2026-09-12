@@ -10,9 +10,8 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
-import { PrismaService } from './prisma/prisma.service';
+
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -67,7 +66,7 @@ async function bootstrap(): Promise<void> {
     allowedHeaders: ['Content-Type', 'Accept', 'X-Request-Id'],
   });
 
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new AllExceptionsFilter(logger, requestContext));
   app.useGlobalInterceptors(new RequestIdInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
@@ -82,7 +81,7 @@ async function bootstrap(): Promise<void> {
 
   setupScalarDocs(app);
 
-  // Prisma handles shutdown hooks automatically in version 5+
+  
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');

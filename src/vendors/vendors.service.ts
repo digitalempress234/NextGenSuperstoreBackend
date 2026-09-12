@@ -7,7 +7,6 @@ import {
 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-// [Identro] Primary KYC/KYB provider (replaces QoreID for all live verification flows)
 import { IdentroService } from '../identro/identro.service';
 import { QoreIDService } from '../qoreid/qoreid.service';
 import { UpdateVendorProfileDto, VendorNinVerifyDto, VendorCacVerifyDto } from './dto/vendor.dto';
@@ -23,7 +22,7 @@ export class VendorsService {
     private readonly qoreid: QoreIDService,
   ) {}
 
-  // ─── Profile ────────────────────────────────────────────────────────────────
+  
 
   async getProfile(userId: number) {
     return this.prisma.vendorProfile.findUnique({
@@ -39,7 +38,7 @@ export class VendorsService {
       update: dto,
     });
 
-    // Advance status only when still at CREATED
+    
     if (profile.onboardingStatus === 'CREATED') {
       return this.prisma.vendorProfile.update({
         where: { id: profile.id },
@@ -51,30 +50,24 @@ export class VendorsService {
     return profile;
   }
 
-  // ─── KYC: NIN Identity Verification ─────────────────────────────────────────
+  
 
-  /**
-   * Verify vendor's NIN via Identro (primary provider).
-   * If selfieBase64 is provided, also runs a face-match against the NIN record via Identro.
-   * On VERIFIED result + IDENTRO_AUTO_APPROVE_ON_MATCH=true, advances status to NIN_VERIFIED.
-   * Any other result (PENDING, FAILED, NOT_FOUND) stays PENDING for manual admin review.
-   */
+  
   async verifyNin(userId: number, dto: VendorNinVerifyDto) {
     const vendor = await this.requireProfile(userId);
 
-    // Data-only NIN check via Identro
+    
     let verifyResult = await this.identro.verifyNin(dto.ninNumber);
 
-    // Optional face-match via Identro
+    
     let faceMatchScore: number | undefined;
     if (dto.selfieBase64) {
       const faceResult = await this.identro.verifyFace({
-        idNumber: dto.ninNumber,
-        idType: 'NIN',
-        photoBase64: dto.selfieBase64,
+        nin: dto.ninNumber,
+        submittedFaceBase64: dto.selfieBase64,
       });
       faceMatchScore = faceResult.faceMatchScore;
-      // Merge face-match raw data into audit snapshot
+      
       verifyResult = {
         ...verifyResult,
         identroRaw: { ...verifyResult.identroRaw, faceVerification: faceResult.identroRaw },
@@ -89,7 +82,7 @@ export class VendorsService {
       create: {
         vendorProfileId: vendor.id,
         ninNumber: dto.ninNumber,
-        qoreidStatus: identroStatus,          // column reused; stores Identro normalised status
+        qoreidStatus: identroStatus,          
         qoreidReference: verifyResult.identroReference,
         qoreidRaw: verifyResult.identroRaw as object,
         ...(faceMatchScore !== undefined && { faceMatchScore }),
@@ -131,18 +124,13 @@ export class VendorsService {
     };
   }
 
-  // ─── KYC: CAC Business Verification ─────────────────────────────────────────
+  
 
-  /**
-   * Verify vendor's business via Identro CAC Basic (primary provider).
-   * If dto.verifyTin is true, also runs optional TIN verification using the same reg number via Identro.
-   * On VERIFIED result + IDENTRO_AUTO_APPROVE_ON_MATCH=true, advances status to CAC_VERIFIED.
-   * Any non-VERIFIED result stays PENDING for manual admin review.
-   */
+  
   async verifyCac(userId: number, dto: VendorCacVerifyDto) {
     const vendor = await this.requireProfile(userId);
 
-    // Derive company type from registration number prefix
+    
     const regUpper = dto.regNumber.toUpperCase();
     const companyType = regUpper.startsWith('BN')
       ? 'BUSINESS_NAME'
@@ -152,7 +140,7 @@ export class VendorsService {
 
     const cacResult = await this.identro.verifyCac(dto.regNumber, companyType);
 
-    // Optional TIN lookup — non-fatal on failure
+    
     let tinRaw: Record<string, unknown> | undefined;
     let tinVerified = false;
     if (dto.verifyTin) {
@@ -172,7 +160,7 @@ export class VendorsService {
       create: {
         vendorProfileId: vendor.id,
         regNumber: dto.regNumber,
-        qoreidStatus: cacResult.identroStatus,    // column reused; stores Identro normalised status
+        qoreidStatus: cacResult.identroStatus,    
         qoreidReference: cacResult.identroReference,
         qoreidRaw: cacResult.identroRaw as object,
         companyName: cacResult.companyName,
@@ -222,12 +210,9 @@ export class VendorsService {
     };
   }
 
-  // ─── Submit for Admin Review ─────────────────────────────────────────────────
+  
 
-  /**
-   * Marks the vendor onboarding as UNDER_REVIEW.
-   * Requires NIN and CAC verifications to exist (any status).
-   */
+  
   async submitForReview(userId: number) {
     const vendor = await this.prisma.vendorProfile.findUnique({
       where: { userId },
@@ -273,7 +258,7 @@ export class VendorsService {
     };
   }
 
-  // ─── Internal helpers ────────────────────────────────────────────────────────
+  
 
   private async requireProfile(userId: number) {
     const vendor = await this.prisma.vendorProfile.findUnique({ where: { userId } });

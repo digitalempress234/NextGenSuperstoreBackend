@@ -188,35 +188,47 @@ export class CreateGuarantorDto {
   photographUrl?: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// QoreID KYC DTOs
-// Appended below — original DTOs above are untouched.
-// ─────────────────────────────────────────────────────────────────────────────
-
 export class MintKycSessionDto {
   @ApiProperty({
-    example: 'liveness',
-    description: 'QoreID product code for the SDK session (e.g. "liveness").',
+    example: 'FACE_LIVENESS_NIN',
+    description:
+      'Identro liveness service type. Use FACE_LIVENESS_ONLY for liveness-only, FACE_LIVENESS_NIN to also match against a NIN record.',
+    enum: ['FACE_LIVENESS_ONLY', 'FACE_LIVENESS_NIN', 'FACE_LIVENESS_BVN', 'FACE_LIVENESS_REFERENCE'],
   })
   @IsString()
-  productCode!: string;
+  serviceType!: string;
 
   @ApiProperty({
-    example: 'rider-onboard-1001-1725000000',
-    description: 'Your internal transaction reference for this session.',
+    example: 'NIN',
+    description: 'Source type for the liveness check.',
+    enum: ['NIN', 'BVN', 'UPLOADED_REFERENCE'],
   })
   @IsString()
-  reference!: string;
+  sourceType!: string;
 
   @ApiPropertyOptional({
-    example: 120,
-    description: 'Optional token lifetime in seconds (server-capped by QoreID).',
+    example: '27801936116',
+    description: 'Required when sourceType is NIN.',
   })
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(10)
-  ttlSeconds?: number;
+  @IsString()
+  nin?: string;
+
+  @ApiPropertyOptional({
+    example: 'RIDER-CONSENT-001',
+    description: 'Optional consent reference for audit trail.',
+  })
+  @IsOptional()
+  @IsString()
+  consentReference?: string;
+
+  @ApiPropertyOptional({
+    example: 'LIVE-RIDER-1001',
+    description: 'Optional idempotency key.',
+  })
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
 }
 
 export class VerifyRiderDocumentDto {

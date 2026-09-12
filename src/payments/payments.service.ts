@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SettlementsService } from '../settlements/settlements.service';
 import { PaystackClient } from './paystack.client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PaymentsService {
@@ -31,7 +32,7 @@ export class PaymentsService {
       throw new BadRequestException('Checkout payment group not found.');
     }
 
-    // Already paid — safe no-op
+    
     if (group.status === 'PAID') {
       return {
         status: 'paid',
@@ -39,18 +40,18 @@ export class PaymentsService {
       };
     }
 
-    // Already initialised — return existing payment instead of creating a new
-    // Paystack transaction. This makes retries and timeout-induced duplicates
-    // completely safe: the client gets the same authorization_url back.
+    
+    
+    
     if (group.status === 'PROCESSING' && group.payment) {
       return group.payment;
     }
 
-    // Generate a stable, per-group reference so that even if two concurrent
-    // requests race past the PROCESSING check above, Paystack initialization
-    // is the only side-effect that can be duplicated — and our DB upsert on
-    // transactionRef (which has a @unique constraint) ensures only one Payment
-    // row is ever persisted for this group.
+    
+    
+    
+    
+    
     const reference = `PUR-${group.id}-${randomUUID()}`;
     const initialized = await this.paystack.initialize(
       reference,
@@ -58,8 +59,8 @@ export class PaymentsService {
       Number(group.totalAmount),
     );
 
-    // Wrap the Payment creation and group status update in a single transaction
-    // so both succeed or both fail — no partial state on retries.
+    
+    
     const payment = await this.prisma.$transaction(async (tx) => {
       const newPayment = await tx.payment.create({
         data: {
@@ -110,7 +111,7 @@ export class PaymentsService {
         provider: 'PAYSTACK',
         eventId: reference,
         eventType: eventName,
-        payload: event as any,
+        payload: event as unknown as Prisma.InputJsonObject,
       },
       update: {},
     });
@@ -164,7 +165,7 @@ export class PaymentsService {
               },
             });
 
-            // Settle funds: credit store wallet, hold rider delivery fee
+            
             await this.settlements.settleOrder(allocation.orderId, tx);
           }
         }

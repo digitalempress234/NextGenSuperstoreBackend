@@ -12,7 +12,7 @@ export class RiderWithdrawDto {
 export class RiderWalletService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Get wallet balance ───────────────────────────────────────────────────────
+  
 
   async getWallet(userId: number) {
     const wallet = await this.prisma.wallet.findUnique({
@@ -20,7 +20,7 @@ export class RiderWalletService {
       select: { id: true, balance: true, updatedAt: true },
     });
 
-    // Sum of HELD earnings that haven't been released yet
+    
     const riderProfile = await this.prisma.riderProfile.findUnique({
       where: { userId },
       select: { id: true },
@@ -42,7 +42,7 @@ export class RiderWalletService {
     };
   }
 
-  // ─── Ledger ───────────────────────────────────────────────────────────────────
+  
 
   async getTransactions(userId: number, page = 1, limit = 10) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
@@ -70,7 +70,7 @@ export class RiderWalletService {
     return { items, total, page, limit };
   }
 
-  // ─── Request Withdrawal ───────────────────────────────────────────────────────
+  
 
   async requestWithdrawal(userId: number, dto: RiderWithdrawDto) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
@@ -84,7 +84,7 @@ export class RiderWalletService {
       throw new BadRequestException(`Insufficient balance. Available: ₦${available.toFixed(2)}.`);
     }
 
-    // Use the rider's primary bank account
+    
     const riderProfile = await this.prisma.riderProfile.findUnique({
       where: { userId },
       include: {
@@ -107,7 +107,7 @@ export class RiderWalletService {
     const ref = `RW-${userId}-${Date.now()}`;
 
     const withdrawal = await this.prisma.$transaction(async (tx) => {
-      // Debit wallet immediately
+      
       await tx.wallet.update({
         where: { userId },
         data: { balance: { decrement: new Prisma.Decimal(dto.amount) } },
@@ -136,12 +136,12 @@ export class RiderWalletService {
       });
     });
 
-    // TODO: if dto.mode === 'AUTO', trigger Paystack Transfer API here
+    
 
     return withdrawal;
   }
 
-  // ─── List Withdrawals ─────────────────────────────────────────────────────────
+  
 
   async getWithdrawals(userId: number) {
     return this.prisma.withdrawal.findMany({

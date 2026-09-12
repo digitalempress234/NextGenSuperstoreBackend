@@ -13,9 +13,7 @@ import {
   VerifyGuarantorDocumentDto,
   VerifyRiderDocumentDto,
 } from './dto/rider.dto';
-// [Identro] — primary KYC provider (replaces QoreID for all live verification flows)
 import { IdentroService } from '../identro/identro.service';
-// [QoreID] — secondary/fallback KYC provider
 import { QoreIDService } from '../qoreid/qoreid.service';
 
 @Injectable()
@@ -26,7 +24,6 @@ export class RidersService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly banks: BankResolverService,
-    // [Identro] Primary KYC provider injected here.
     private readonly identro: IdentroService,
     private readonly qoreid: QoreIDService,
   ) {}
@@ -280,26 +277,25 @@ export class RidersService {
     return rider;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Identro KYC methods — primary provider for all live verification flows.
-  // ─────────────────────────────────────────────────────────────────────────────
+  
+  
+  
 
-  /**
-   * Mints a short-lived Identro liveness SDK session token.
-   * Only the `sdkToken` is returned to the client — the API key never leaves the server.
-   * POST /merchant-api/liveness/session
-   */
+  
   async mintKycSession(userId: number, dto: MintKycSessionDto) {
     const rider = await this.requireProfile(userId);
 
     const session = await this.identro.mintSdkSessionToken({
-      reference: dto.reference,
-      ttlSeconds: dto.ttlSeconds,
-      // Use a pseudonymous subject ref — never include PII
+      serviceType: dto.serviceType,
+      sourceType: dto.sourceType,
+      ...(dto.nin && { nin: dto.nin }),
+      ...(dto.consentReference && { consentReference: dto.consentReference }),
+      ...(dto.idempotencyKey && { idempotencyKey: dto.idempotencyKey }),
+      
       subjectRef: `rider-${rider.id}`,
     });
 
-    // Record the pending liveness verification so it can be updated by the webhook / admin later
+    
     await this.prisma.riderLivenessVerification.create({
       data: {
         riderId: rider.id,
@@ -310,19 +306,14 @@ export class RidersService {
       },
     });
 
-    // Return only the session token — never expose the API key
+    
     return {
       sdkSessionToken: session.sdkToken,
       expiresAt: session.expiresAt,
     };
   }
 
-  /**
-   * Triggers automated Identro identity verification for a specific RiderDocument.
-   * Optionally runs a face-match via Identro if a selfie base64 is provided.
-   * If IDENTRO_AUTO_APPROVE_ON_MATCH=true and Identro returns VERIFIED, the document is auto-approved.
-   * Documents with any other status remain PENDING for manual admin review.
-   */
+  
   async verifyRiderDocument(userId: number, dto: VerifyRiderDocumentDto) {
     const rider = await this.requireProfile(userId);
 
@@ -338,10 +329,10 @@ export class RidersService {
       throw new BadRequestException('Document number is required for automated verification.');
     }
 
-    // Dispatch to the correct Identro endpoint based on document type
+    
     let verifyResult = await this.dispatchDocumentVerify(document.type, document.documentNumber);
 
-    // Optionally run face-match if selfie is provided and document type supports it
+    
     let faceMatchScore: number | undefined;
     if (
       dto.selfieBase64 &&
@@ -353,12 +344,12 @@ export class RidersService {
       const idType =
         document.type === 'DRIVERS_LICENSE' ? 'DRIVERS_LICENSE' : 'NIN';
       const faceResult = await this.identro.verifyFace({
-        idNumber: document.documentNumber,
+        nin: document.documentNumber,
+        submittedFaceBase64: dto.selfieBase64,
         idType,
-        photoBase64: dto.selfieBase64,
       });
       faceMatchScore = faceResult.faceMatchScore;
-      // Merge face-match result into the raw snapshot for the audit trail
+      
       verifyResult = {
         ...verifyResult,
         identroRaw: { ...verifyResult.identroRaw, faceVerification: faceResult.identroRaw },
@@ -371,7 +362,7 @@ export class RidersService {
     const updated = await this.prisma.riderDocument.update({
       where: { id: document.id },
       data: {
-        qoreidStatus: identroStatus,            // column reused; stores Identro normalised status
+        qoreidStatus: identroStatus,            
         qoreidReference: verifyResult.identroReference,
         qoreidRaw: verifyResult.identroRaw as object,
         ...(faceMatchScore !== undefined && { faceMatchScore }),
@@ -396,15 +387,11 @@ export class RidersService {
     return updated;
   }
 
-  /**
-   * Triggers automated Identro name/ID check on a GuarantorDocument.
-   * No face-match — the guarantor is not present during onboarding.
-   * PENDING result stays PENDING for manual admin review; only VERIFIED auto-approves.
-   */
+  
   async verifyGuarantorDocument(userId: number, dto: VerifyGuarantorDocumentDto) {
     const rider = await this.requireProfile(userId);
 
-    // Ensure the document belongs to a guarantor of this rider
+    
     const document = await this.prisma.guarantorDocument.findFirst({
       where: {
         id: dto.documentId,
@@ -452,26 +439,17 @@ export class RidersService {
     return updated;
   }
 
-  /**
-   * Internal helper — routes a document verification call to the correct Identro endpoint.
-   * Guarantor callers never pass selfieBase64 (no face check).
-   */
   private async dispatchDocumentVerify(type: string, documentNumber: string) {
     switch (type) {
       case 'NIN':
       case 'NIN_SLIP':
       case 'NATIONAL_ID':
-        // Identro field: nin (path: /merchant-api/nin/verify)
         return this.identro.verifyNin(documentNumber);
       case 'DRIVERS_LICENSE':
-        // Identro field: licenseNumber (path: /merchant-api/driver-license/verify)
         return this.identro.verifyDriversLicense(documentNumber);
       case 'VOTERS_CARD':
-        // Identro field: vin (path: /merchant-api/voters-card/verify — confirmed from live API)
         return this.identro.verifyVotersCard(documentNumber);
       case 'INTERNATIONAL_PASSPORT':
-        // Identro does not expose a dedicated passport endpoint yet.
-        // Falls back to NIN flow until Identro publishes it.
         return this.identro.verifyNin(documentNumber);
       default:
         throw new BadRequestException(

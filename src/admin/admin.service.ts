@@ -184,8 +184,8 @@ export class AdminService {
       return vendor;
     });
 
-    // Notify the vendor outside the transaction so a notification failure
-    // does not roll back the approval.
+    
+    
     await this.notifications.notifyUser({
       userId,
       type: 'VENDOR_APPROVED',
@@ -223,7 +223,7 @@ export class AdminService {
       return vendor;
     });
 
-    // Notify the vendor outside the transaction.
+    
     await this.notifications.notifyUser({
       userId,
       type: 'VENDOR_REJECTED',

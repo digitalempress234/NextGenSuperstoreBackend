@@ -106,7 +106,7 @@ export class AdminController {
   approveVendor(
     @Param('userId', ParseIntPipe) userId: number,
     @CurrentUser('id') reviewerId: number,
-    @Body() dto: ReviewRiderDto, // We can reuse ReviewRiderDto for the reason field
+    @Body() dto: ReviewRiderDto, 
   ) {
     return this.adminService.approveVendor(userId, reviewerId, dto.reason);
   }

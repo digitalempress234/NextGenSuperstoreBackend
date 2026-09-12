@@ -131,7 +131,7 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order.');
     }
 
-    // Fetch the latest GPS ping for active deliveries
+    
     let latestLocation: {
       latitude: number;
       longitude: number;
@@ -185,7 +185,7 @@ export class OrdersService {
           }
         : null,
       pickup: order.pickup ?? null,
-      // Hints for the mobile app to connect to the real-time WebSocket
+      
       websocket:
         order.delivery
           ? {

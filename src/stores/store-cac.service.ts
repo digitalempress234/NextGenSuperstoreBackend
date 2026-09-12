@@ -13,15 +13,11 @@ export class StoreCacService {
     private readonly qoreid: QoreIDService,
   ) {}
 
-  // ─── Submit CAC for verification ─────────────────────────────────────────────
+  
 
-  /**
-   * Submit (or re-submit) a CAC registration number for a store.
-   * Calls QoreID CAC Basic and persists the raw response.
-   * If a prior record exists it is updated in-place; otherwise a new one is created.
-   */
+  
   async submit(userId: number, storeId: number, regNumber: string) {
-    // Gate: store must belong to the calling user
+    
     const store = await this.prisma.store.findFirst({
       where: { id: storeId, ownerUserId: userId },
     });
@@ -30,7 +26,7 @@ export class StoreCacService {
       throw new NotFoundException('Store not found or you do not own it.');
     }
 
-    // Prevent re-submission if already APPROVED
+    
     const existing = await this.prisma.storeCacVerification.findFirst({
       where: { storeId, status: DocumentStatus.APPROVED },
     });
@@ -43,11 +39,11 @@ export class StoreCacService {
 
     const extracted = await this.qoreid.verifyCac(regNumber);
 
-    // Upsert: update if one exists (PENDING/REJECTED), create otherwise
+    
     const record = await this.prisma.storeCacVerification.upsert({
       where: {
-        // Use a unique index on storeId + regNumber (or storeId alone for 1-per-store)
-        // We'll use storeId as the natural unique key since a store has one CAC
+        
+        
         id:
           (
             await this.prisma.storeCacVerification.findFirst({
@@ -77,9 +73,9 @@ export class StoreCacService {
     return record;
   }
 
-  // ─── Get CAC status for a store ───────────────────────────────────────────────
+  
 
-  /** Returns the latest CAC verification record for a store (owner or admin). */
+  
   async getStatus(userId: number, storeId: number) {
     const store = await this.prisma.store.findFirst({
       where: { id: storeId, ownerUserId: userId },
@@ -104,19 +100,16 @@ export class StoreCacService {
         reviewedAt: true,
         createdAt: true,
         updatedAt: true,
-        // Omit qoreidRaw — internal audit field, never exposed to API clients
+        
       },
     });
 
     return record ?? null;
   }
 
-  // ─── Admin: Review CAC ────────────────────────────────────────────────────────
+  
 
-  /**
-   * Approve or reject a CAC verification record.
-   * Also activates/deactivates the store based on outcome.
-   */
+  
   async review(
     reviewerId: number,
     verificationId: number,
@@ -147,7 +140,7 @@ export class StoreCacService {
           reviewedAt: new Date(),
         },
       }),
-      // Activate store only on approval; deactivate on rejection
+      
       this.prisma.store.update({
         where: { id: record.storeId },
         data: { isActive: decision === 'APPROVED' },
@@ -157,7 +150,7 @@ export class StoreCacService {
     return updated;
   }
 
-  // ─── Admin: List pending CAC verifications ────────────────────────────────────
+  
 
   listPending() {
     return this.prisma.storeCacVerification.findMany({

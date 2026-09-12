@@ -11,7 +11,7 @@ import { StaffService } from './staff.service';
   imports: [
     PrismaModule,
     MailModule,
-    // Register JwtModule without a global secret so StaffService can use JWT_STAFF_SECRET
+    
     JwtModule.register({}),
   ],
   controllers: [StaffAuthController, StaffController],

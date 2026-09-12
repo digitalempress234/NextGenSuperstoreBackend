@@ -46,7 +46,7 @@ export class VendorsController {
     return this.vendorsService.updateProfile(userId, dto);
   }
 
-  // ─── KYC ─────────────────────────────────────────────────────────────────────
+  
 
   @Post('kyc/nin')
   @ApiOperation({

@@ -118,7 +118,7 @@ export class StoresController {
     return this.storesService.addProduct(userId, storeId, dto);
   }
 
-  // ─── CAC Verification ────────────────────────────────────────────────────────
+  
 
   @Post(':id/cac')
   @ApiCookieAuth('purse_access_token')
@@ -163,7 +163,7 @@ export class StoresController {
     return this.storeCacService.getStatus(userId, storeId);
   }
 
-  // ─── Store Wallet ───────────────────────────────────────────────────────
+  
 
   @Get(':id/wallet')
   @ApiCookieAuth('purse_access_token')

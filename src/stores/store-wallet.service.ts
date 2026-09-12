@@ -15,7 +15,7 @@ export class StoreWithdrawDto {
 export class StoreWalletService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Get wallet balance ───────────────────────────────────────────────────────
+  
 
   async getWallet(userId: number, storeId: number) {
     await this.assertOwner(userId, storeId);
@@ -33,7 +33,7 @@ export class StoreWalletService {
     return wallet ?? { balance: 0, lockedBalance: 0 };
   }
 
-  // ─── Ledger ───────────────────────────────────────────────────────────────────
+  
 
   async getTransactions(userId: number, storeId: number, page = 1, limit = 10) {
     await this.assertOwner(userId, storeId);
@@ -63,7 +63,7 @@ export class StoreWalletService {
     return { items, total, page, limit };
   }
 
-  // ─── Request Withdrawal ───────────────────────────────────────────────────────
+  
 
   async requestWithdrawal(userId: number, storeId: number, dto: StoreWithdrawDto) {
     await this.assertOwner(userId, storeId);
@@ -82,7 +82,7 @@ export class StoreWalletService {
     const ref = `SW-${storeId}-${Date.now()}`;
 
     const withdrawal = await this.prisma.$transaction(async (tx) => {
-      // Debit wallet immediately (funds are reserved)
+      
       await tx.storeWallet.update({
         where: { id: wallet.id },
         data: { balance: { decrement: new Prisma.Decimal(dto.amount) } },
@@ -112,12 +112,12 @@ export class StoreWalletService {
       });
     });
 
-    // TODO: if dto.mode === 'AUTO', trigger Paystack Transfer API here
+    
 
     return withdrawal;
   }
 
-  // ─── List Withdrawals ─────────────────────────────────────────────────────────
+  
 
   async getWithdrawals(userId: number, storeId: number) {
     await this.assertOwner(userId, storeId);
@@ -141,7 +141,7 @@ export class StoreWalletService {
     });
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────────
+  
 
   private async assertOwner(userId: number, storeId: number) {
     const store = await this.prisma.store.findFirst({

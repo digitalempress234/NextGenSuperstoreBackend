@@ -133,7 +133,7 @@ export class AuthService {
       data: { isEmailVerified: true },
     });
 
-    // Send the welcome email asynchronously
+    
     this.mail.sendTemplate(
       'welcome',
       user.email,
@@ -153,7 +153,7 @@ export class AuthService {
       select: { id: true, email: true, firstName: true, isEmailVerified: true },
     });
 
-    // Do not reveal whether an email exists.
+    
     if (!user || user.isEmailVerified) {
       return { accepted: true };
     }
@@ -166,7 +166,7 @@ export class AuthService {
         user.firstName ?? undefined,
       );
     } catch {
-      // Do not reveal whether the account exists or whether a cooldown is active.
+      
     }
     return { accepted: true };
   }
@@ -182,7 +182,7 @@ export class AuthService {
       try {
         await this.createAndSendOtp(user.id, email, 'PASSWORD_RESET', user.firstName ?? undefined);
       } catch {
-        // Mail delivery failures are logged by MailService; do not expose account state.
+        
       }
     }
 
@@ -342,7 +342,7 @@ export class AuthService {
       );
     }
 
-    // A user can have only one active OTP per purpose. Resend replaces it.
+    
     await this.prisma.otpChallenge.deleteMany({
       where: {
         userId,

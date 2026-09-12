@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationPriority, NotificationType, Prisma } from '@prisma/client';
 
@@ -19,6 +19,8 @@ interface NotifyUserInput {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
@@ -68,8 +70,8 @@ export class NotificationsService {
           },
           user.id,
         );
-      } catch {
-        // Email delivery is logged by MailService. In-app notification remains available.
+      } catch (error) {
+        this.logger.error('Failed to send notification email', error);
       }
     }
 

@@ -14,8 +14,6 @@ export interface RenderedEmail {
   text: string;
 }
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
 export const escapeHtml = (value: unknown): string =>
   String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -24,26 +22,21 @@ export const escapeHtml = (value: unknown): string =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 
-/** Format a number as Nigerian Naira, e.g. ₦12,500.00 */
 export const formatNaira = (value: unknown): string => {
   const num = Number(value);
   if (isNaN(num)) return '₦0.00';
   return '&#8358;' + num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 };
 
-/** Render a coloured status pill */
 export const statusBadge = (label: string, color = '#f97316'): string =>
   `<span style="display:inline-block;padding:4px 14px;border-radius:20px;background:${color};color:#fff;font-size:13px;font-weight:700;letter-spacing:.5px;">${escapeHtml(label)}</span>`;
 
-// ─── Brand tokens ─────────────────────────────────────────────────────────────
 const BRAND_ORANGE = '#f97316';
 const BRAND_DARK   = '#7c2d12';
 const BG_LIGHT     = '#fff7ed';
 const TEXT_MAIN    = '#1c1917';
 const TEXT_MUTED   = '#78716c';
 const BORDER       = '#fed7aa';
-
-// ─── Layout ───────────────────────────────────────────────────────────────────
 
 export const layout = (title: string, body: string, appName = 'Superstore'): string => `
 <!doctype html>
@@ -143,20 +136,15 @@ export const layout = (title: string, body: string, appName = 'Superstore'): str
 </body>
 </html>`;
 
-// ─── Shared section components ────────────────────────────────────────────────
-
-/** A highlighted info box */
 export const infoBox = (content: string): string =>
   `<div style="background:${BG_LIGHT};border-left:4px solid ${BRAND_ORANGE};border-radius:0 8px 8px 0;padding:16px 20px;margin:20px 0;font-size:15px;line-height:1.6;">${content}</div>`;
 
-/** A data row in a summary table */
 export const summaryRow = (label: string, value: string, bold = false): string =>
   `<tr>
     <td style="padding:10px 0;font-size:14px;color:#78716c;border-bottom:1px solid #fde8d0;width:45%;">${escapeHtml(label)}</td>
     <td style="padding:10px 0;font-size:14px;color:#1c1917;border-bottom:1px solid #fde8d0;text-align:right;${bold ? 'font-weight:700;font-size:16px;color:#f97316;' : ''}">${value}</td>
   </tr>`;
 
-/** A CTA button */
 export const ctaButton = (text: string, href: string): string =>
   `<table cellpadding="0" cellspacing="0" role="presentation" style="margin:28px 0;">
     <tr>

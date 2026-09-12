@@ -15,7 +15,6 @@ interface CheckoutInput {
   deliveryFee?: number;
 }
 
-/** Items at or below this quantity trigger a low-stock alert to the vendor. */
 const LOW_STOCK_THRESHOLD = 5;
 
 @Injectable()
@@ -134,14 +133,14 @@ export class CheckoutService {
           },
         });
 
-        // ── Stock decrement + auto-disable when reaching zero ──────────────
+        
 
         for (const item of items) {
           const updated = await tx.storeProduct.update({
             where: { id: item.storeProductId },
             data: {
               stockQuantity: { decrement: item.quantity },
-              // Auto-hide the product when stock reaches zero
+              
               ...(item.storeProduct.stockQuantity - item.quantity <= 0
                 ? { availability: false }
                 : {}),
@@ -236,8 +235,8 @@ export class CheckoutService {
       ),
     );
 
-    // ── Stock alert notifications to vendors ──────────────────────────────
-    // Use allSettled so one failing notification never blocks the others.
+    
+    
     await Promise.allSettled(
       result.stockAlerts.map((alert) => {
         const isOutOfStock = alert.remaining === 0;
@@ -257,7 +256,7 @@ export class CheckoutService {
             remaining: alert.remaining,
             sku: alert.sku,
           },
-          // Only send email for out-of-stock (avoid email spam for low-stock).
+          
           ...(isOutOfStock
             ? {
                 templateKey: 'lowStock' as const,

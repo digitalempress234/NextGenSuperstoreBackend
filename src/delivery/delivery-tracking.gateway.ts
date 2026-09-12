@@ -100,7 +100,7 @@ export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDi
   }
 
   handleDisconnect(_socket: Socket): void {
-    // Socket.IO removes rooms automatically.
+    
   }
 
   @SubscribeMessage('delivery:join')

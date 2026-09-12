@@ -166,17 +166,17 @@ export class RidersController {
     return this.ridersService.submitForReview(userId);
   }
 
-  // ─── QoreID KYC endpoints ────────────────────────────────────────────────────
+  
 
   @Post('kyc/session')
   @ApiOperation({
-    summary: 'Mint a QoreID SDK session token for liveness verification',
+    summary: 'Mint an Identro liveness SDK session for biometric verification',
     description:
-      'Backend-only call to QoreID. Returns only the sdkSessionToken — credentials never reach the client.',
+      'Backend-only call to Identro. Returns only the session reference — credentials never reach the client.',
   })
   @OkExample({
-    sdkSessionToken: '<JWT handed to the mobile SDK>',
-    expiresAt: '2026-09-01T10:00:00.000Z',
+    reference: '<session reference returned to mobile SDK>',
+    status: 'PENDING',
   })
   @StandardErrors()
   mintKycSession(@CurrentUser('id') userId: number, @Body() dto: MintKycSessionDto) {
@@ -185,9 +185,9 @@ export class RidersController {
 
   @Post('kyc/verify-document')
   @ApiOperation({
-    summary: 'Trigger automated QoreID identity verification for a rider document',
+    summary: 'Trigger automated Identro identity verification for a rider document',
     description:
-      'Calls the appropriate QoreID endpoint based on document type. Optionally runs a face-match if selfieBase64 is provided.',
+      'Calls the appropriate Identro endpoint based on document type. Optionally runs a face-match if selfieBase64 is provided.',
   })
   @OkExample({
     id: 10,
@@ -203,7 +203,7 @@ export class RidersController {
 
   @Post('kyc/verify-guarantor-document')
   @ApiOperation({
-    summary: 'Trigger automated QoreID name/ID check on a guarantor document',
+    summary: 'Trigger automated Identro name/ID check on a guarantor document',
     description: 'No face-match — the guarantor is not present during onboarding.',
   })
   @OkExample({ id: 5, type: 'NIN', status: 'APPROVED', qoreidStatus: 'VERIFIED' })
@@ -215,7 +215,7 @@ export class RidersController {
     return this.ridersService.verifyGuarantorDocument(userId, dto);
   }
 
-  // ─── Wallet endpoints ────────────────────────────────────────────────────────
+  
 
   @Get('wallet')
   @ApiOperation({ summary: 'Get rider wallet balance (available + held delivery fees)' })

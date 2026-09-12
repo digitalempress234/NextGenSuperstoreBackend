@@ -20,19 +20,6 @@ import type {
   IdentroVotersCardResponse,
 } from './dto/identro.dto';
 
-/**
- * Primary KYC / KYB provider.
- * All identity, business and biometric verification calls go through this service.
- * QoreIDService is retained in the codebase as a secondary / manual-fallback provider
- * but is not called from any live flow while this service is active.
- *
- * Base path: /merchant-api
- * Auth: x-api-key header (header name configurable via IDENTRO_API_KEY_HEADER)
- *
- * Status normalisation:
- *   Identro "COMPLETED" → internal "VERIFIED"
- *   Everything else    → returned as-is (e.g. "PENDING", "FAILED", "NOT_FOUND")
- */
 @Injectable()
 export class IdentroService {
   private readonly logger = new Logger(IdentroService.name);
@@ -50,37 +37,19 @@ export class IdentroService {
       this.config.get<string>('IDENTRO_AUTO_APPROVE_ON_MATCH') === 'true';
   }
 
-  // ── Config getter ──────────────────────────────────────────────────────────
-
-  /** Whether IDENTRO_AUTO_APPROVE_ON_MATCH is enabled. Consumed by RidersService / VendorsService. */
   get shouldAutoApprove(): boolean {
     return this.autoApproveOnMatch;
   }
 
-  // ── Liveness / SDK Session ─────────────────────────────────────────────────
-
-  /**
-   * Mints a short-lived Identro liveness SDK session token.
-   * Only the resulting sdkToken should ever be forwarded to the mobile/web client.
-   * POST /merchant-api/liveness/session
-   */
   async mintSdkSessionToken(
     dto: IdentroLivenessSessionRequest,
   ): Promise<IdentroLivenessSessionResponse> {
-    const raw = await this.post<IdentroLivenessSessionResponse>(
-      '/merchant-api/liveness/session',
+    return this.post<IdentroLivenessSessionResponse>(
+      '/merchant-api/face/requests',
       dto,
     );
-    return raw;
   }
 
-  // ── Identity Verification ──────────────────────────────────────────────────
-
-  /**
-   * Verify a NIN number via Identro.
-   * POST /merchant-api/nin/verify
-   * Field: nin (not idNumber — confirmed from live API)
-   */
   async verifyNin(
     nin: string,
     opts: { firstname?: string; lastname?: string; idempotencyKey?: string } = {},
@@ -93,11 +62,6 @@ export class IdentroService {
     return this.normaliseIdentity(raw);
   }
 
-  /**
-   * Verify a driver's license via Identro.
-   * POST /merchant-api/driver-license/verify
-   * Field: licenseNumber (confirmed from live API — not idNumber)
-   */
   async verifyDriversLicense(
     licenseNumber: string,
     opts: { firstname?: string; lastname?: string; idempotencyKey?: string } = {},
@@ -110,11 +74,6 @@ export class IdentroService {
     return this.normaliseIdentity(raw);
   }
 
-  /**
-   * Verify a voter's card (VIN) via Identro.
-   * POST /merchant-api/voters-card/verify
-   * Field: vin (confirmed from live API)
-   */
   async verifyVotersCard(
     vin: string,
     opts: { firstname?: string; lastname?: string; dob?: string; idempotencyKey?: string } = {},
@@ -127,16 +86,14 @@ export class IdentroService {
     return this.normaliseIdentity(raw);
   }
 
-  // ── Face Verification ──────────────────────────────────────────────────────
-
-  /**
-   * Face-match a selfie against a government ID record.
-   * POST /merchant-api/face-verification
-   */
   async verifyFace(dto: IdentroFaceVerifyRequest): Promise<IdentroIdentityExtracted> {
-    const raw = await this.post<IdentroFaceVerifyResponse>('/merchant-api/face-verification', {
-      ...dto,
+    const raw = await this.post<IdentroFaceVerifyResponse>('/merchant-api/face/requests', {
+      serviceType: 'FACE_MATCH_NIN',
+      sourceType: 'NIN',
+      nin: dto.nin,
+      submittedFaceBase64: dto.submittedFaceBase64 ?? dto.selfieBase64,
       consentCaptured: true,
+      ...(dto.idempotencyKey && { idempotencyKey: dto.idempotencyKey }),
     });
     const extracted = this.normaliseIdentity(raw);
     extracted.faceMatchScore = (raw.data as { faceMatchScore?: number } | undefined)
@@ -144,21 +101,10 @@ export class IdentroService {
     return extracted;
   }
 
-  // ── CAC Verification ───────────────────────────────────────────────────────
-
-  /**
-   * Search CAC business names before registration.
-   * POST /merchant-api/cac/name-search
-   */
   async cacNameSearch(dto: IdentroCacNameSearchRequest): Promise<IdentroCacNameSearchResponse> {
     return this.post<IdentroCacNameSearchResponse>('/merchant-api/cac/name-search', dto);
   }
 
-  /**
-   * CAC Basic verification — core company registration details.
-   * POST /merchant-api/cac/basic
-   * @param registrationNumber e.g. RC1684989, BN1234567, IT1234567
-   */
   async verifyCac(
     registrationNumber: string,
     companyType: IdentroCompanyType = 'COMPANY',
@@ -181,14 +127,10 @@ export class IdentroService {
       identroRaw: raw as Record<string, unknown>,
       companyName: data?.companyName ?? null,
       companyType: data?.companyType ?? null,
-      incorporatedAt: null, // Identro CAC Basic does not return incorporation date; use Advanced for this.
+      incorporatedAt: null,
     };
   }
 
-  /**
-   * CAC Advanced verification — directors, shareholders, objectives etc.
-   * POST /merchant-api/cac/advance
-   */
   async verifyCacAdvanced(
     registrationNumber: string,
     companyType: IdentroCompanyType = 'COMPANY',
@@ -204,12 +146,6 @@ export class IdentroService {
     return this.post<IdentroCacAdvancedResponse>('/merchant-api/cac/advance', body);
   }
 
-  // ── TIN Verification ───────────────────────────────────────────────────────
-
-  /**
-   * Verify TIN by RC/BN/IT registration number or direct TIN.
-   * POST /merchant-api/tin
-   */
   async verifyTin(
     regNumberOrTin: string,
     mode: 'regNumber' | 'tin' = 'regNumber',
@@ -225,12 +161,6 @@ export class IdentroService {
     >;
   }
 
-  // ── Status normalisation helpers ───────────────────────────────────────────
-
-  /**
-   * Normalises Identro's "COMPLETED" → internal "VERIFIED".
-   * All other status strings are returned as-is.
-   */
   normaliseStatus(raw: string | null | undefined): string | null {
     if (!raw) return null;
     return raw === 'COMPLETED' ? 'VERIFIED' : raw;
@@ -248,7 +178,7 @@ export class IdentroService {
     };
   }
 
-  // ── Internal HTTP helper ───────────────────────────────────────────────────
+  
 
   private async post<T>(path: string, body: unknown): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
