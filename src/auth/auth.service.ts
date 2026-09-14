@@ -165,8 +165,12 @@ export class AuthService {
         'EMAIL_VERIFICATION',
         user.firstName ?? undefined,
       );
-    } catch {
-      
+    } catch (error) {
+      this.logger.error(
+        'Failed to resend email verification OTP',
+        error instanceof Error ? error.stack : undefined,
+        AuthService.name,
+      );
     }
     return { accepted: true };
   }
@@ -181,8 +185,8 @@ export class AuthService {
     if (user && user.status === 'ACTIVE') {
       try {
         await this.createAndSendOtp(user.id, email, 'PASSWORD_RESET', user.firstName ?? undefined);
-      } catch {
-        
+      } catch (err) {
+        this.logger.error('Failed to send OTP for forgot password', err instanceof Error ? err.stack : String(err));
       }
     }
 

@@ -13,7 +13,7 @@ export class MarketplaceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async home() {
-    const [categories, stores, featuredProducts, popularProducts] = await this.prisma.$transaction([
+    const [categories, stores, featuredProducts, popularProducts, discountedProducts] = await this.prisma.$transaction([
       this.prisma.category.findMany({
         where: {
           isActive: true,
@@ -103,6 +103,43 @@ export class MarketplaceService {
         orderBy: { orderItems: { _count: 'desc' } },
         take: 12,
       }),
+      this.prisma.product.findMany({
+        where: {
+          status: true,
+          offers: {
+            some: {
+              isActive: true,
+              availability: true,
+              discountPrice: { not: null },
+            },
+          },
+        },
+        include: {
+          category: true,
+          images: { orderBy: { sortOrder: 'asc' }, take: 2 },
+          offers: {
+            where: {
+              isActive: true,
+              availability: true,
+              discountPrice: { not: null },
+            },
+            include: {
+              store: {
+                select: {
+                  id: true,
+                  storeName: true,
+                  state: true,
+                  city: true,
+                },
+              },
+            },
+            orderBy: { price: 'asc' },
+            take: 3,
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 12,
+      }),
     ]);
 
     return {
@@ -110,6 +147,7 @@ export class MarketplaceService {
       stores,
       featuredProducts,
       popularProducts,
+      discountedProducts,
     };
   }
 

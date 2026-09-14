@@ -36,6 +36,7 @@ export class MarketplaceController {
     ],
     featuredProducts: [],
     popularProducts: [],
+    discountedProducts: [],
   })
   @StandardErrors()
   home() {

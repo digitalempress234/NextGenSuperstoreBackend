@@ -207,7 +207,8 @@ export class StaffService {
     });
 
     
-    const loginUrl = this.config.get<string>('STAFF_PORTAL_URL', 'https://admin.purse.com/login');
+    const frontendUrl = this.config.get<string>('FRONTEND_URL', 'https://admin.purse.com');
+    const loginUrl = `${frontendUrl}/login`;
     await this.mail.sendTemplate(
       'staffWelcome',
       email,
