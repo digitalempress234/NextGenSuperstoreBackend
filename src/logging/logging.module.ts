@@ -43,7 +43,7 @@ import { RequestContextInterceptor } from './request-context.interceptor';
           },
         },
         transport:
-          process.env.NODE_ENV !== 'production'
+          process.env.NODE_ENV !== 'production' || process.env.PRETTY_LOGS === 'true'
             ? {
                 target: 'pino-pretty',
                 options: {

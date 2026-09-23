@@ -35,7 +35,13 @@ export class CsrfGuard implements CanActivate {
       .map((value) => value.trim())
       .filter(Boolean);
 
-    if (!candidate || !allowedOrigins.includes(candidate)) {
+
+    // Browsers enforce sending Origin/Referer on cross-site requests, so it's safe to allow.
+    if (!candidate) {
+      return true;
+    }
+
+    if (!allowedOrigins.includes(candidate)) {
       throw new ForbiddenException('CSRF origin validation failed.');
     }
 

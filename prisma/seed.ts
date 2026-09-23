@@ -1,7 +1,13 @@
 import { PrismaClient, RoleName } from '@prisma/client';
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import * as bcrypt from 'bcryptjs';
+import { config } from 'dotenv';
 
-const prisma = new PrismaClient();
+// Load .env before the adapter reads DATABASE_URL
+config();
+
+const adapter = new PrismaMariaDb(process.env.DATABASE_URL as string);
+const prisma = new PrismaClient({ adapter });
 
 const permissionDefinitions: Array<[string, string]> = [
   ['users.view', 'View customer and user profiles.'],
@@ -516,6 +522,52 @@ async function main(): Promise<void> {
     }
 
     console.log(`   ✓ Store: ${def.name} (${productNames.length} products) — vendor: ${def.email}`);
+  }
+
+  // ── Checkout platform settings ────────────────────────────────────────────
+  // Fix: delivery was disabled by default (no DB row → hardcoded false).
+  // This seed ensures delivery is always enabled with a sensible fee on fresh installs.
+  console.log('→ Seeding checkout settings...');
+  await prisma.platformConfig.upsert({
+    where: { key: 'checkout_settings' },
+    update: {},  // never overwrite an admin-configured value
+    create: {
+      key: 'checkout_settings',
+      value: JSON.stringify({
+        deliveryEnabled: true,
+        deliveryFeePerStore: 1500,   // ₦1,500 per store order
+        opayEnabled: false,
+      }),
+      description: 'Home delivery toggle, per-store delivery fee (NGN), and OPay channel availability.',
+    },
+  });
+  console.log('   ✓ checkout_settings: deliveryEnabled=true, deliveryFeePerStore=1500');
+
+  // ── Pickup stations ───────────────────────────────────────────────────────
+  // Fix: PickupStation table was empty — customers had no stations to select.
+  console.log('→ Seeding pickup stations...');
+  const pickupStations = [
+    { name: 'Purse Pickup — Ikeja (Lagos)',        address: '15 Allen Avenue, Ikeja',                      state: 'Lagos',    city: 'Ikeja',          phone: '08001234001', latitude: 6.5958,  longitude: 3.3484,  isActive: true },
+    { name: 'Purse Pickup — Lekki (Lagos)',         address: '4 Admiralty Way, Lekki Phase 1',               state: 'Lagos',    city: 'Lekki',          phone: '08001234002', latitude: 6.4281,  longitude: 3.5389,  isActive: true },
+    { name: 'Purse Pickup — Victoria Island (Lagos)',address: '10 Adeola Odeku Street, Victoria Island',      state: 'Lagos',    city: 'Victoria Island', phone: '08001234003', latitude: 6.4281,  longitude: 3.4219,  isActive: true },
+    { name: 'Purse Pickup — Surulere (Lagos)',       address: '32 Bode Thomas Street, Surulere',              state: 'Lagos',    city: 'Surulere',       phone: '08001234004', latitude: 6.5042,  longitude: 3.3537,  isActive: true },
+    { name: 'Purse Pickup — Garki (Abuja)',          address: '7 Moshood Abiola Way, Garki II',               state: 'FCT Abuja',city: 'Garki',          phone: '08001234005', latitude: 9.0415,  longitude: 7.4764,  isActive: true },
+    { name: 'Purse Pickup — Wuse (Abuja)',           address: '12 Aminu Kano Crescent, Wuse 2',               state: 'FCT Abuja',city: 'Wuse',           phone: '08001234006', latitude: 9.0765,  longitude: 7.4898,  isActive: true },
+    { name: 'Purse Pickup — Enugu GRA',              address: '22 Ogui Road, Government Reservation Area',    state: 'Enugu',    city: 'Enugu',          phone: '08001234007', latitude: 6.4584,  longitude: 7.5464,  isActive: true },
+    { name: 'Purse Pickup — Port Harcourt (GRA)',   address: '5 Peter Odili Road, GRA Phase II',             state: 'Rivers',   city: 'Port Harcourt',  phone: '08001234008', latitude: 4.8396,  longitude: 7.0134,  isActive: true },
+    { name: 'Purse Pickup — Ibadan Challenge',       address: '18 Lagos-Ibadan Expressway, Challenge',        state: 'Oyo',      city: 'Ibadan',         phone: '08001234009', latitude: 7.3986,  longitude: 3.9081,  isActive: true },
+    { name: 'Purse Pickup — Osogbo Central',         address: '3 Oba Adesoji Aderemi Ring Road, Osogbo',      state: 'Osun',     city: 'Osogbo',         phone: '08001234010', latitude: 7.7718,  longitude: 4.5564,  isActive: true },
+  ];
+
+  for (const station of pickupStations) {
+    // Upsert by name so re-runs don't duplicate stations
+    const existing = await prisma.pickupStation.findFirst({ where: { name: station.name } });
+    if (existing) {
+      await prisma.pickupStation.update({ where: { id: existing.id }, data: station });
+    } else {
+      await prisma.pickupStation.create({ data: station });
+    }
+    console.log(`   ✓ ${station.name}`);
   }
 
   console.log('\n✅ Seed complete!');

@@ -8,14 +8,9 @@ import { StaffJwtGuard } from './staff-jwt.guard';
 import { StaffService } from './staff.service';
 
 @Module({
-  imports: [
-    PrismaModule,
-    MailModule,
-    
-    JwtModule.register({}),
-  ],
+  imports: [PrismaModule, MailModule, JwtModule.register({})],
   controllers: [StaffAuthController, StaffController],
   providers: [StaffService, StaffJwtGuard],
-  exports: [StaffService, StaffJwtGuard],
+  exports: [StaffService, StaffJwtGuard, JwtModule],
 })
 export class StaffModule {}

@@ -1,9 +1,9 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsIn,
-  IsNumber,
-  IsObject,
+  IsInt,
+  IsNotEmpty,
   IsOptional,
   IsPositive,
   IsString,
@@ -11,41 +11,47 @@ import {
 } from 'class-validator';
 
 export class CheckoutAddressDto {
-  @ApiPropertyOptional({ example: 'Home' })
-  @IsOptional()
-  @IsString()
-  label?: string;
-
-  @ApiPropertyOptional({ example: 'Lagos' })
-  @IsOptional()
-  @IsString()
-  state?: string;
-
-  @ApiPropertyOptional({ example: 'Ikeja' })
-  @IsOptional()
-  @IsString()
-  city?: string;
-
-  @ApiProperty({ example: '12 Allen Avenue, Ikeja' })
-  @IsString()
-  address!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() label?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() state?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
+  @ApiProperty() @IsString() @IsNotEmpty() address!: string;
 }
 
 export class CreateCheckoutDto {
-  @ApiProperty({ enum: ['PICKUP', 'DELIVERY'], example: 'DELIVERY' })
+  @ApiPropertyOptional() @IsOptional() @IsInt() @IsPositive() cartId?: number;
+  @ApiPropertyOptional({ enum: ['PICKUP', 'DELIVERY'] })
+  @IsOptional()
   @IsIn(['PICKUP', 'DELIVERY'])
-  fulfillmentType!: 'PICKUP' | 'DELIVERY';
-
+  fulfillmentType?: 'PICKUP' | 'DELIVERY';
+  @ApiPropertyOptional({ enum: ['home_delivery', 'store_pickup'] })
+  @IsOptional()
+  @IsIn(['home_delivery', 'store_pickup'])
+  deliveryMethod?: 'home_delivery' | 'store_pickup';
+  @ApiPropertyOptional() @IsOptional() @IsInt() @IsPositive() addressId?: number;
+  @ApiPropertyOptional() @IsOptional() @IsInt() @IsPositive() pickupStationId?: number;
   @ApiPropertyOptional({ type: CheckoutAddressDto })
   @IsOptional()
-  @IsObject()
   @ValidateNested()
   @Type(() => CheckoutAddressDto)
   address?: CheckoutAddressDto;
-
-  @ApiPropertyOptional({ example: 1500 })
+  @ApiPropertyOptional({ enum: ['card', 'opay', 'wallet'], default: 'card' })
   @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @IsPositive()
-  deliveryFee?: number;
+  @IsIn(['card', 'opay', 'wallet'])
+  paymentMethod?: 'card' | 'opay' | 'wallet';
+}
+
+export class PlaceOrderDto extends OmitType(CreateCheckoutDto, [
+  'cartId',
+  'deliveryMethod',
+  'paymentMethod',
+  'fulfillmentType',
+  'address',
+] as const) {
+  @ApiProperty() @IsInt() @IsPositive() cartId!: number;
+  @ApiProperty({ enum: ['home_delivery', 'store_pickup'] })
+  @IsIn(['home_delivery', 'store_pickup'])
+  deliveryMethod!: 'home_delivery' | 'store_pickup';
+  @ApiProperty({ enum: ['card', 'opay', 'wallet'] })
+  @IsIn(['card', 'opay', 'wallet'])
+  paymentMethod!: 'card' | 'opay' | 'wallet';
 }

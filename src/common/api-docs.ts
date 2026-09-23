@@ -1,11 +1,13 @@
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiInternalServerErrorResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiUnauthorizedResponse,
+  ApiExtension,
 } from '@nestjs/swagger';
 
 export function AuthenticatedApi(): any {
@@ -77,12 +79,53 @@ export const StandardErrors = (): MethodDecorator => {
 export function OkExample(example: unknown, description = 'Successful response.') {
   return ApiOkResponse({
     description,
-    schema: {
-      example: {
-        success: true,
-        data: example,
-        requestId: 'req_01JABC123',
-      },
-    },
+    schema: { example },
   });
+}
+
+export function CreatedExample(example: unknown, description = 'Created successfully.') {
+  return ApiCreatedResponse({ description, schema: { example } });
+}
+
+/**
+ * Attaches an x-required-permissions extension visible in Swagger/Scalar
+ * and adds the standard 401 Unauthorized response.
+ * Use on every protected endpoint alongside @RequirePermissions().
+ *
+ * @param permissions 
+ * @param roles        
+ */
+export function RequireAuth(
+  permissions: string[],
+  roles?: string[],
+): MethodDecorator {
+  return (target, propertyKey, descriptor) => {
+    const roleNote = roles?.length
+      ? `Required roles: ${roles.join(', ')}.`
+      : '';
+    const permNote = `Required permission(s): \`${permissions.join('`, `')}\`.`;
+    ApiExtension('x-required-permissions', permissions)(target, propertyKey, descriptor);
+    if (roles?.length) {
+      ApiExtension('x-required-roles', roles)(target, propertyKey, descriptor);
+    }
+    ApiUnauthorizedResponse({
+      description: 'Authentication cookie is missing or invalid.',
+      schema: {
+        example: {
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'Authentication required.' },
+        },
+      },
+    })(target, propertyKey, descriptor);
+    ApiForbiddenResponse({
+      description: `${permNote} ${roleNote}`.trim(),
+      schema: {
+        example: {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You do not have the required permission.' },
+        },
+      },
+    })(target, propertyKey, descriptor);
+    return descriptor;
+  };
 }

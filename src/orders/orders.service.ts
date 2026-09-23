@@ -5,6 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
+import { CartService } from '../cart/cart.service';
+import { ConflictException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -22,25 +24,69 @@ const transitions: Record<OrderStatus, OrderStatus[]> = {
   CANCELLED: [],
 };
 
+function screenStatus(status: OrderStatus) {
+  if (status === 'ORDER_RECEIVED' || status === 'CONFIRMED') return 'pending';
+  if (status === 'READY_FOR_PICKUP') return 'ready_for_pickup';
+  if (status === 'CANCELLED') return 'cancelled';
+  if (['PICKED_UP', 'DELIVERED', 'COMPLETED'].includes(status)) return 'delivered';
+  return 'in_progress';
+}
+
 @Injectable()
 export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly cart: CartService,
   ) {}
 
-  mine(userId: number) {
-    return this.prisma.order.findMany({
-      where: { userId },
-      include: {
-        items: true,
-        store: true,
-        delivery: { include: { statusUpdates: true } },
-        pickup: true,
-        statusHistory: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  mine(
+    userId: number,
+    page = 1,
+    limit = 20,
+    status?: 'all' | 'pending' | 'in_progress' | 'ready_for_pickup' | 'delivered' | 'cancelled',
+  ) {
+    const statuses: Record<Exclude<NonNullable<typeof status>, 'all'>, OrderStatus[]> = {
+      pending: ['ORDER_RECEIVED', 'CONFIRMED'],
+      in_progress: ['PREPARING', 'RIDER_ASSIGNED', 'OUT_FOR_DELIVERY'],
+      ready_for_pickup: ['READY_FOR_PICKUP'],
+      delivered: ['PICKED_UP', 'DELIVERED', 'COMPLETED'],
+      cancelled: ['CANCELLED'],
+    };
+    return this.prisma.order
+      .findMany({
+        where: {
+          userId,
+          ...(status && status !== 'all' ? { currentStatus: { in: statuses[status] } } : {}),
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          items: true,
+          allocations: {
+            include: { paymentGroup: { select: { id: true, status: true, paymentMethod: true } } },
+          },
+          store: true,
+          delivery: { include: { statusUpdates: true } },
+          pickup: true,
+          statusHistory: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      .then((orders) =>
+        orders.map((order) => ({
+          ...order,
+          orderId: order.id,
+          status: screenStatus(order.currentStatus),
+          paymentStatus: order.allocations[0]?.paymentGroup.status.toLowerCase() ?? 'pending',
+          paymentMethod: order.allocations[0]?.paymentGroup.paymentMethod.toLowerCase() ?? null,
+          itemDescription:
+            order.items[0]?.productName && order.items.length > 1
+              ? `${order.items[0].productName} & ${order.items.length - 1} more item${order.items.length > 2 ? 's' : ''}`
+              : (order.items[0]?.productName ?? ''),
+          firstItemImage: order.items[0]?.productImage ?? null,
+        })),
+      );
   }
 
   async one(userId: number, id: number) {
@@ -48,6 +94,9 @@ export class OrdersService {
       where: { id },
       include: {
         items: true,
+        allocations: {
+          include: { paymentGroup: { select: { id: true, status: true, paymentMethod: true } } },
+        },
         store: true,
         delivery: { include: { statusUpdates: true } },
         pickup: true,
@@ -63,7 +112,63 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order.');
     }
 
-    return order;
+    return {
+      ...order,
+      orderId: order.id,
+      status: screenStatus(order.currentStatus),
+      paymentStatus: order.allocations[0]?.paymentGroup.status.toLowerCase() ?? 'pending',
+      paymentMethod: order.allocations[0]?.paymentGroup.paymentMethod.toLowerCase() ?? null,
+      deliveryMethod: order.fulfillmentType === 'DELIVERY' ? 'home_delivery' : 'store_pickup',
+      deliveryDetails:
+        order.fulfillmentType === 'DELIVERY'
+          ? {
+              name: order.customerName,
+              address: order.deliveryAddress,
+              city: order.deliveryCity,
+              state: order.deliveryState,
+              phone: order.customerPhone,
+              email: order.customerEmail,
+            }
+          : order.pickup,
+      timeline: order.statusHistory.map((event) => ({
+        step: event.toStatus.toLowerCase(),
+        label: event.toStatus.replaceAll('_', ' ').toLowerCase(),
+        completedAt: event.createdAt,
+        isCompleted: true,
+      })),
+    };
+  }
+
+  async reorder(userId: number, id: number) {
+    const order = await this.one(userId, id);
+    if (!['COMPLETED', 'DELIVERED', 'PICKED_UP'].includes(order.currentStatus)) {
+      throw new BadRequestException('Only fulfilled orders can be reordered.');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const cart = await this.cart.lock(tx, userId);
+      const addedItems: Array<{ productId: number; storeProductId: number }> = [];
+      const skippedItems: Array<{ productId: number; storeProductId: number; reason: string }> = [];
+      for (const item of order.items) {
+        try {
+          await this.cart.addInTransaction(tx, cart.id, item.storeProductId, item.quantity);
+          addedItems.push({ productId: item.productId, storeProductId: item.storeProductId });
+        } catch (error) {
+          if (!(error instanceof NotFoundException || error instanceof ConflictException))
+            throw error;
+          skippedItems.push({
+            productId: item.productId,
+            storeProductId: item.storeProductId,
+            reason: error.message,
+          });
+        }
+      }
+      return {
+        status: skippedItems.length ? 'partial' : 'success',
+        cart: await this.cart.recalculate(tx, cart.id),
+        addedItems,
+        skippedItems,
+      };
+    });
   }
 
   async track(userId: number, id: number) {
@@ -131,7 +236,6 @@ export class OrdersService {
       throw new ForbiddenException('You do not have access to this order.');
     }
 
-    
     let latestLocation: {
       latitude: number;
       longitude: number;
@@ -168,6 +272,15 @@ export class OrdersService {
     }
 
     return {
+      orderId: order.id,
+      currentStatus: screenStatus(order.currentStatus),
+      currentLocation: latestLocation,
+      estimatedDelivery: null,
+      timeline: order.statusHistory.map((event) => ({
+        step: event.toStatus.toLowerCase(),
+        label: event.toStatus.replaceAll('_', ' ').toLowerCase(),
+        completedAt: event.createdAt,
+      })),
       order: {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -185,17 +298,16 @@ export class OrdersService {
           }
         : null,
       pickup: order.pickup ?? null,
-      
-      websocket:
-        order.delivery
-          ? {
-              namespace: '/delivery',
-              joinEvent: 'delivery:join',
-              payload: { deliveryId: order.delivery.id },
-              locationEvent: 'delivery.location.updated',
-              statusEvent: 'delivery.status.updated',
-            }
-          : null,
+
+      websocket: order.delivery
+        ? {
+            namespace: '/delivery',
+            joinEvent: 'delivery:join',
+            payload: { deliveryId: order.delivery.id },
+            locationEvent: 'delivery.location.updated',
+            statusEvent: 'delivery.status.updated',
+          }
+        : null,
     };
   }
 
@@ -204,6 +316,12 @@ export class OrdersService {
 
     if (!order) {
       throw new NotFoundException('Order not found.');
+    }
+
+    if (order.currentStatus === 'ORDER_RECEIVED') {
+      throw new BadRequestException(
+        'Unpaid orders must be confirmed by payment verification or cancelled through checkout.',
+      );
     }
 
     if (!transitions[order.currentStatus].includes(status)) {

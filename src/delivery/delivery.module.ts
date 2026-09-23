@@ -8,9 +8,16 @@ import { DeliveryService } from './delivery.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RedisModule } from '../redis/redis.module';
+import { SettlementsModule } from '../settlements/settlements.module';
 
 @Module({
-  imports: [PrismaModule, NotificationsModule, RedisModule, JwtModule.register({})],
+  imports: [
+    PrismaModule,
+    NotificationsModule,
+    RedisModule,
+    SettlementsModule,
+    JwtModule.register({}),
+  ],
   controllers: [DeliveryController, DeliveryTrackingController],
   providers: [DeliveryService, DeliveryTrackingService, DeliveryTrackingGateway],
   exports: [DeliveryService, DeliveryTrackingService],

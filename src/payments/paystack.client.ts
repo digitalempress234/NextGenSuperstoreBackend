@@ -1,5 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
+import { kobo } from '../common/money';
 
 interface PaystackResponse<T> {
   status: boolean;
@@ -18,14 +20,24 @@ export class PaystackClient {
     };
   }
 
-  async initialize(reference: string, email: string, amount: number, callbackUrl?: string) {
+  async initialize(
+    reference: string,
+    email: string,
+    amount: Prisma.Decimal.Value,
+    callbackUrl?: string,
+    channels?: string[],
+    metadata?: Record<string, unknown>,
+  ) {
     const response = await fetch('https://api.paystack.co/transaction/initialize', {
       method: 'POST',
+      signal: AbortSignal.timeout(15000),
       headers: this.headers(),
       body: JSON.stringify({
         reference,
         email,
-        amount: Math.round(amount * 100),
+        amount: kobo(amount),
+        channels,
+        metadata,
         currency: 'NGN',
         callback_url: callbackUrl ?? this.config.get('PAYSTACK_CALLBACK_URL'),
       }),
@@ -47,7 +59,7 @@ export class PaystackClient {
   async verify(reference: string) {
     const response = await fetch(
       `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
-      { headers: this.headers() },
+      { headers: this.headers(), signal: AbortSignal.timeout(15000) },
     );
     const body = (await response.json()) as PaystackResponse<Record<string, unknown>>;
 

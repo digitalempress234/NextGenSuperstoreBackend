@@ -1,5 +1,9 @@
 # Superstore Backend
 
+For the updated cart, checkout, payment, pickup-station, and BNPL screen flow, see [Checkout integration guide](docs/checkout-flow.md).
+
+Share [Mobile checkout handoff](docs/mobile-checkout-handoff.md) with the mobile app developer for implementation steps, examples, and a release checklist.
+
 Production-oriented NestJS API for the superstore marketplace.
 
 ## What this revision fixes
@@ -30,16 +34,17 @@ Versioned API:
 https://api.syroltech.com/purse/v1
 ```
 
-Swagger:
+Interactive API reference routes served by the Nest application (a reverse proxy may add its own prefix):
 
 ```text
-https://api.syroltech.com/purse/docs
+Scalar:  /docs, /docs/public, /docs/admin, /docs/store, /docs/rider
+Swagger: /swagger, /swagger/public, /swagger/admin, /swagger/store, /swagger/rider
 ```
 
-Swagger JSON:
+The full Swagger OpenAPI JSON is available at:
 
 ```text
-https://api.syroltech.com/purse/docs-json
+/swagger-json
 ```
 
 ## Domain modules

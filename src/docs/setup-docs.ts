@@ -9,6 +9,7 @@ import { AuthModule } from '../auth/auth.module';
 import { CartModule } from '../cart/cart.module';
 import { CatalogModule } from '../catalog/catalog.module';
 import { CheckoutModule } from '../checkout/checkout.module';
+import { BnplModule } from '../bnpl/bnpl.module';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { HealthModule } from '../health/health.module';
 import { LocationsModule } from '../locations/locations.module';
@@ -28,10 +29,13 @@ import { VendorsModule } from '../vendors/vendors.module';
 import { StaffModule } from '../staff/staff.module';
 
 export function setupScalarDocs(app: INestApplication) {
+  const serverUrl = process.env.BASE_URL ?? '/';
+
   const baseConfig = new DocumentBuilder()
     .setTitle('Purse Superstore API')
     .setVersion('1.0.0')
-    
+    .addServer(serverUrl, process.env.NODE_ENV === 'production' ? 'Production' : 'Local')
+
     .addCookieAuth(
       'purse_access_token',
       {
@@ -51,15 +55,12 @@ export function setupScalarDocs(app: INestApplication) {
         description: 'Admin and Staff Authentication Cookie',
       },
       'purse_staff_token',
-    )
-    
-    
+    );
 
-  
   const adminConfig = baseConfig
     .setDescription(
       'API for System Administrators and Back-Office Staff. ' +
-      'Includes staff authentication, RBAC, KYC approvals, and auditing.',
+        'Includes staff authentication, RBAC, KYC approvals, and auditing.',
     )
     .build();
   const adminDocument = SwaggerModule.createDocument(app, adminConfig, {
@@ -72,7 +73,7 @@ export function setupScalarDocs(app: INestApplication) {
       HealthModule,
       SettlementsModule,
       QoreIDModule,
-      
+
       OrdersModule,
       StoresModule,
       RidersModule,
@@ -80,6 +81,8 @@ export function setupScalarDocs(app: INestApplication) {
       VendorsModule,
       NotificationsModule,
       CatalogModule,
+      CheckoutModule,
+      BnplModule,
     ],
   });
   app.use(
@@ -94,20 +97,25 @@ export function setupScalarDocs(app: INestApplication) {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
-  
   const storeConfig = baseConfig.setDescription('API for Store Owners and Managers.').build();
   const storeDocument = SwaggerModule.createDocument(app, storeConfig, {
-    include: [StoresModule, VendorsModule, CatalogModule, UploadsModule, NotificationsModule, SettlementsModule],
+    include: [
+      StoresModule,
+      VendorsModule,
+      CatalogModule,
+      UploadsModule,
+      NotificationsModule,
+      SettlementsModule,
+    ],
   });
 
-  
   if (storeDocument.paths) {
     Object.keys(storeDocument.paths).forEach((path) => {
-      if (path.startsWith('/admin')) {
+      if (path.includes('/admin/')) {
         delete storeDocument.paths[path];
       }
-      
-      if (path === '/stores' && storeDocument.paths[path].get) {
+
+      if (path.endsWith('/stores') && storeDocument.paths[path].get) {
         delete storeDocument.paths[path].get;
         if (Object.keys(storeDocument.paths[path]).length === 0) {
           delete storeDocument.paths[path];
@@ -127,16 +135,14 @@ export function setupScalarDocs(app: INestApplication) {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
-  
   const riderConfig = baseConfig.setDescription('API for Delivery Personnel.').build();
   const riderDocument = SwaggerModule.createDocument(app, riderConfig, {
     include: [RidersModule, DeliveryModule, NotificationsModule],
   });
 
-  
   if (riderDocument.paths) {
     Object.keys(riderDocument.paths).forEach((path) => {
-      if (path.startsWith('/admin')) {
+      if (path.includes('/admin/')) {
         delete riderDocument.paths[path];
       }
     });
@@ -154,15 +160,19 @@ export function setupScalarDocs(app: INestApplication) {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
-  
-  const publicConfig = baseConfig.setDescription('API for Customers and Public access.').build();
+  const publicConfig = baseConfig.setDescription(
+    'API for Customers and Public access. ' +
+    'Includes authentication, catalog browsing, cart, checkout, wallet, orders, and notifications.',
+  ).build();
   const publicDocument = SwaggerModule.createDocument(app, publicConfig, {
     include: [
       AuthModule,
       UsersModule,
       MarketplaceModule,
+      CatalogModule,
       CartModule,
       CheckoutModule,
+      BnplModule,
       PaymentsModule,
       OrdersModule,
       ReviewsModule,
@@ -170,6 +180,9 @@ export function setupScalarDocs(app: INestApplication) {
       NotificationsModule,
     ],
   });
+  for (const path of Object.keys(publicDocument.paths)) {
+    if (path.includes('/admin/')) delete publicDocument.paths[path];
+  }
   app.use(
     '/docs/public',
     apiReference({
@@ -182,11 +195,11 @@ export function setupScalarDocs(app: INestApplication) {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
-  
   const fullConfig = baseConfig
     .setDescription('Full REST API for the Purse multi-store marketplace.')
     .build();
   const fullDocument = SwaggerModule.createDocument(app, fullConfig);
+  app.use('/docs', apiReference({ content: fullDocument, theme: 'moon', layout: 'modern' }));
   SwaggerModule.setup('swagger', app, fullDocument, {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });

@@ -4,12 +4,14 @@ import { NestFactory } from '@nestjs/core';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { PrismaClient } from '@prisma/client';
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import * as bcrypt from 'bcryptjs';
 import { createHmac } from 'crypto';
 
 import { AppModule } from '../src/app.module';
 
-const prisma = new PrismaClient();
+const adapter = new PrismaMariaDb(process.env.DATABASE_URL as string);
+const prisma = new PrismaClient({ adapter });
 
 jest.setTimeout(30000);
 

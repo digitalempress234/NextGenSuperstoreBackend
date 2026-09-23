@@ -1,12 +1,15 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 
 import { AppLoggerService } from '../logging/app-logger.service';
 
 @Injectable()
 export class PrismaService extends PrismaClient<Prisma.PrismaClientOptions, 'query' | 'error' | 'warn'> implements OnModuleInit {
   constructor(private readonly logger: AppLoggerService) {
+    const adapter = new PrismaMariaDb(process.env.DATABASE_URL as string);
     super({
+      adapter,
       log:
         process.env.PRISMA_QUERY_LOGS === 'true'
           ? [

@@ -3,7 +3,7 @@ import { ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger'
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
-import { OkExample, StandardErrors } from '../common/api-docs';
+import { CreatedExample, OkExample, StandardErrors } from '../common/api-docs';
 import { AddCartItemDto, UpdateCartItemDto } from './dto/cart.dto';
 import { CartService } from './cart.service';
 
@@ -37,17 +37,25 @@ export class CartController {
   @Post('items')
   @RequirePermissions('cart.manage')
   @ApiOperation({ summary: 'Add a store-specific product offer to cart' })
-  @OkExample({
-    id: 91,
-    cartId: 12,
-    storeProductId: 42,
-    quantity: 2,
-    unitPrice: 475,
-    totalPrice: 950,
+  @CreatedExample({
+    id: 12,
+    currency: 'NGN',
+    subtotal: '950.00',
+    totalItems: 2,
+    items: [
+      {
+        id: 91,
+        storeProductId: 42,
+        productId: 101,
+        quantity: 2,
+        unitPrice: '475.00',
+        totalPrice: '950.00',
+      },
+    ],
   })
   @StandardErrors()
   addItem(@CurrentUser('id') userId: number, @Body() dto: AddCartItemDto) {
-    return this.cartService.add(userId, dto.storeProductId, dto.quantity);
+    return this.cartService.addSelection(userId, dto);
   }
 
   @Patch('items/:storeProductId')
@@ -70,12 +78,12 @@ export class CartController {
     return this.cartService.updateQuantity(userId, storeProductId, dto.quantity);
   }
 
-  @Delete('items')
+  @Delete(['', 'items'])
   @RequirePermissions('cart.manage')
   @ApiOperation({
     summary: 'Clear all items from the authenticated customer cart',
   })
-  @OkExample({ cleared: true })
+  @OkExample({ id: 12, subtotal: '0.00', totalItems: 0, items: [] })
   @StandardErrors()
   clear(@CurrentUser('id') userId: number) {
     return this.cartService.clear(userId);
@@ -85,7 +93,7 @@ export class CartController {
   @RequirePermissions('cart.manage')
   @ApiOperation({ summary: 'Remove a store-specific product offer from cart' })
   @ApiParam({ name: 'storeProductId', example: 42 })
-  @OkExample({ removed: true })
+  @OkExample({ id: 12, subtotal: '0.00', totalItems: 0, items: [] })
   @StandardErrors()
   removeItem(
     @CurrentUser('id') userId: number,

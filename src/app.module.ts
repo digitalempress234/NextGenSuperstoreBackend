@@ -33,6 +33,7 @@ import { JwtGuard } from './auth/jwt.guard';
 import { CsrfGuard } from './common/csrf.guard';
 import { PermissionGuard } from './common/permission.guard';
 import { StaffModule } from './staff/staff.module';
+import { BnplModule } from './bnpl/bnpl.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { StaffModule } from './staff/staff.module';
     VendorsModule,
     StaffModule,
     IdentroModule,
+    BnplModule,
   ],
   providers: [
     {

@@ -84,8 +84,27 @@ export class CatalogService {
     return this.prisma.category.findMany({
       where: { isActive: true },
       orderBy: [{ level: 'asc' }, { name: 'asc' }],
-      include: { children: { where: { isActive: true } } },
+      include: { children: { where: { isActive: true }, orderBy: { name: 'asc' } } },
     });
+  }
+
+  async getCategory(id: number) {
+    const category = await this.prisma.category.findUnique({
+      where: { id },
+      include: {
+        parent: true,
+        children: {
+          where: { isActive: true },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+
+    if (!category) {
+      throw new NotFoundException('Category not found.');
+    }
+
+    return category;
   }
 
   async createCategory(dto: CreateCategoryDto) {

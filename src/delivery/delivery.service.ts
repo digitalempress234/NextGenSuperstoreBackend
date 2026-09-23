@@ -9,6 +9,7 @@ import { DeliveryStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeliveryTrackingGateway } from './delivery-tracking.gateway';
+import { SettlementsService } from '../settlements/settlements.service';
 
 const allowedTransitions: Record<DeliveryStatus, DeliveryStatus[]> = {
   PENDING: ['OFFERED', 'ASSIGNED', 'CANCELLED'],
@@ -28,6 +29,7 @@ export class DeliveryService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly trackingGateway: DeliveryTrackingGateway,
+    private readonly settlements: SettlementsService,
   ) {}
 
   myDeliveries(riderId: number) {
@@ -121,6 +123,8 @@ export class DeliveryService {
         },
       });
 
+      await this.settlements.holdRiderEarning(offer.deliveryId, tx);
+
       return tx.delivery.findUnique({
         where: { id: offer.deliveryId },
         include: { order: true },
@@ -182,6 +186,7 @@ export class DeliveryService {
 
       if (status === 'DELIVERED') {
         data.deliveredAt = new Date();
+        await this.settlements.releaseRiderEarning(deliveryId, tx);
       }
 
       const updated = await tx.delivery.update({

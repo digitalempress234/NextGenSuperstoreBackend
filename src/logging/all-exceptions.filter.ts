@@ -23,6 +23,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       exception instanceof HttpException ? exception.getResponse() : 'Internal server error';
 
     const errorName = exception instanceof Error ? exception.name : 'UnknownError';
+    const details =
+      typeof message === 'object' && message !== null
+        ? (message as { message?: string | string[]; errors?: unknown; data?: unknown })
+        : undefined;
 
     this.logger.error(
       {
@@ -39,7 +43,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       success: false,
       error: {
         code: this.mapCode(status),
-        message: typeof message === 'string' ? message : 'Request failed',
+        message: typeof message === 'string' ? message : (details?.message ?? 'Request failed'),
+        ...(details?.errors !== undefined ? { errors: details.errors } : {}),
+        ...(details?.data !== undefined ? { data: details.data } : {}),
       },
       requestId: this.requestContext.requestId,
       timestamp: new Date().toISOString(),
