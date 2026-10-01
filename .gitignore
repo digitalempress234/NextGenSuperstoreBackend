@@ -11,5 +11,6 @@ prisma/*.db
 context/
 docs/
 scripts/
+README.md
 docker-compose.yml
 docker-compose.yaml
