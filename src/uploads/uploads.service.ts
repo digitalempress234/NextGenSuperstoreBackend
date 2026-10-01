@@ -32,4 +32,8 @@ export class UploadsService {
       Readable.from(buffer).pipe(stream);
     });
   }
+
+  destroy(publicId: string): Promise<unknown> {
+    return cloudinary.uploader.destroy(publicId);
+  }
 }

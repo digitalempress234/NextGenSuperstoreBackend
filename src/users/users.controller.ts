@@ -1,11 +1,25 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateAddressDto, UpdateAddressDto } from './dto/address.dto';
 import { UsersService } from './users.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('Users')
 @ApiCookieAuth('purse_access_token')
@@ -54,6 +68,32 @@ export class UsersController {
   @StandardErrors()
   updateMe(@CurrentUser('id') userId: number, @Body() dto: UpdateUserDto) {
     return this.usersService.updateProfile(userId, dto);
+  }
+
+  @Post('me/avatar')
+  @UseInterceptors(FileInterceptor('avatar'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['avatar'],
+      properties: { avatar: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOperation({ summary: 'Customer: upload and replace profile avatar' })
+  updateAvatar(@CurrentUser('id') userId: number, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('An avatar file is required.');
+    return this.usersService.updateAvatar(userId, file);
+  }
+
+  @Post('me/change-password')
+  @ApiOperation({ summary: 'Customer: change password and revoke other sessions' })
+  changePassword(
+    @CurrentUser('id') userId: number,
+    @CurrentUser('sessionId') sessionId: number | undefined,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.usersService.changePassword(userId, sessionId, dto);
   }
 
   @Get('me/addresses')

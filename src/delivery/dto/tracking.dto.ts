@@ -54,7 +54,7 @@ export class UpdateDeliveryLocationDto {
 }
 
 export class DeliveryTrackingHistoryQueryDto {
-  @ApiPropertyOptional({ example: 100, default: 100, minimum: 1, maximum: 500 })
+  @ApiPropertyOptional({ example: 15, default: 15, minimum: 1, maximum: 500 })
   @IsOptional()
   @IsInt()
   @Min(1)

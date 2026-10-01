@@ -77,6 +77,16 @@ export class UpsertStoreProductDto {
   @IsString()
   sku?: string;
 
+  @ApiPropertyOptional({ example: '0123456789012' })
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @ApiPropertyOptional({ enum: ['EAN_13', 'UPC_A', 'CODE_128', 'QR'] })
+  @IsOptional()
+  @IsString()
+  barcodeFormat?: string;
+
   @ApiProperty({ example: 950 })
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()

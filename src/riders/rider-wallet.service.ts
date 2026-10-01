@@ -12,15 +12,12 @@ export class RiderWithdrawDto {
 export class RiderWalletService {
   constructor(private readonly prisma: PrismaService) {}
 
-  
-
   async getWallet(userId: number) {
     const wallet = await this.prisma.wallet.findUnique({
       where: { userId },
       select: { id: true, balance: true, updatedAt: true },
     });
 
-    
     const riderProfile = await this.prisma.riderProfile.findUnique({
       where: { userId },
       select: { id: true },
@@ -42,9 +39,7 @@ export class RiderWalletService {
     };
   }
 
-  
-
-  async getTransactions(userId: number, page = 1, limit = 10) {
+  async getTransactions(userId: number, page = 1, limit = 15) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) return { items: [], total: 0, page, limit };
 
@@ -70,8 +65,6 @@ export class RiderWalletService {
     return { items, total, page, limit };
   }
 
-  
-
   async requestWithdrawal(userId: number, dto: RiderWithdrawDto) {
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     const available = wallet ? Number(wallet.balance) : 0;
@@ -84,7 +77,6 @@ export class RiderWalletService {
       throw new BadRequestException(`Insufficient balance. Available: ₦${available.toFixed(2)}.`);
     }
 
-    
     const riderProfile = await this.prisma.riderProfile.findUnique({
       where: { userId },
       include: {
@@ -98,16 +90,15 @@ export class RiderWalletService {
     if (!riderProfile) throw new NotFoundException('Rider profile not found.');
 
     const primaryBank = riderProfile.bankAccounts[0];
-    if (!primaryBank) {
+    if (!primaryBank || primaryBank.verificationStatus !== 'APPROVED') {
       throw new BadRequestException(
-        'No primary bank account found. Please add and verify a bank account first.',
+        'A verified primary bank account is required before withdrawal.',
       );
     }
 
     const ref = `RW-${userId}-${Date.now()}`;
 
     const withdrawal = await this.prisma.$transaction(async (tx) => {
-      
       await tx.wallet.update({
         where: { userId },
         data: { balance: { decrement: new Prisma.Decimal(dto.amount) } },
@@ -136,12 +127,8 @@ export class RiderWalletService {
       });
     });
 
-    
-
     return withdrawal;
   }
-
-  
 
   async getWithdrawals(userId: number) {
     return this.prisma.withdrawal.findMany({

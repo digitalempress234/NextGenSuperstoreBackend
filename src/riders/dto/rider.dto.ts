@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import {
+  Equals,
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class UpdateRiderProfileDto {
   @ApiPropertyOptional({ example: 'Ikeja / Allen Avenue' })
@@ -131,6 +141,152 @@ export class CreateVehicleDto {
   photoUrl?: string;
 }
 
+export class UpdateVehicleDto {
+  @ApiPropertyOptional({ example: 'Honda' })
+  @IsOptional()
+  @IsString()
+  make?: string;
+
+  @ApiPropertyOptional({ example: 'CB125' })
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @ApiPropertyOptional({ example: 2024 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  year?: number;
+
+  @ApiPropertyOptional({ example: 'Black' })
+  @IsOptional()
+  @IsString()
+  color?: string;
+
+  @ApiPropertyOptional({ example: 'LAG-123-XY' })
+  @IsOptional()
+  @IsString()
+  plateNumber?: string;
+
+  @ApiPropertyOptional({ example: 'REG-2026-12345' })
+  @IsOptional()
+  @IsString()
+  registrationNumber?: string;
+
+  @ApiPropertyOptional({ enum: ['OWNED', 'AUTHORIZED_TO_USE', 'LEASED'] })
+  @IsOptional()
+  @IsEnum(['OWNED', 'AUTHORIZED_TO_USE', 'LEASED'] as const)
+  ownershipType?: 'OWNED' | 'AUTHORIZED_TO_USE' | 'LEASED';
+
+  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/demo/image/upload/vehicle.jpg' })
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
+}
+
+export class ReplaceVehicleDocumentDto {
+  @ApiPropertyOptional({ example: 'REG-2026-12345' })
+  @IsOptional()
+  @IsString()
+  documentNumber?: string;
+
+  @ApiProperty({ example: 'https://res.cloudinary.com/demo/image/upload/registration-new.jpg' })
+  @IsString()
+  url!: string;
+
+  @ApiPropertyOptional({ example: 'purse/vehicle/registration-new' })
+  @IsOptional()
+  @IsString()
+  publicId?: string;
+
+  @ApiPropertyOptional({ example: '2027-10-01' })
+  @IsOptional()
+  @IsDateString()
+  expiryDate?: string;
+}
+
+export class CreateRiderLicenceDto {
+  @ApiProperty({ example: 'DRIVERS_LICENSE' })
+  @IsString()
+  type!: string;
+
+  @ApiProperty({ example: 'LAG-DRV-123456' })
+  @IsString()
+  number!: string;
+
+  @ApiPropertyOptional({ example: '2024-01-15' })
+  @IsOptional()
+  @IsDateString()
+  issueDate?: string;
+
+  @ApiPropertyOptional({ example: '2028-01-15' })
+  @IsOptional()
+  @IsDateString()
+  expiryDate?: string;
+
+  @ApiProperty({ example: 'https://res.cloudinary.com/demo/image/upload/licence.jpg' })
+  @IsString()
+  documentUrl!: string;
+}
+
+export class CreateVehicleDocumentDto {
+  @ApiProperty({
+    enum: [
+      'VEHICLE_REGISTRATION',
+      'PROOF_OF_OWNERSHIP_OR_PERMISSION',
+      'INSURANCE',
+      'ROADWORTHINESS_CERTIFICATE',
+    ],
+    example: 'VEHICLE_REGISTRATION',
+  })
+  @IsIn([
+    'VEHICLE_REGISTRATION',
+    'PROOF_OF_OWNERSHIP_OR_PERMISSION',
+    'INSURANCE',
+    'ROADWORTHINESS_CERTIFICATE',
+  ])
+  type!: string;
+
+  @ApiPropertyOptional({ example: 'REG-2024-12345' })
+  @IsOptional()
+  @IsString()
+  documentNumber?: string;
+
+  @ApiProperty({ example: 'https://res.cloudinary.com/demo/image/upload/registration.jpg' })
+  @IsString()
+  url!: string;
+
+  @ApiPropertyOptional({ example: 'purse/vehicle/registration-01' })
+  @IsOptional()
+  @IsString()
+  publicId?: string;
+
+  @ApiPropertyOptional({ example: '2027-01-15' })
+  @IsOptional()
+  @IsDateString()
+  expiryDate?: string;
+}
+
+export class CreateGuarantorDocumentDto {
+  @ApiProperty({ example: 'NIN' })
+  @IsString()
+  type!: string;
+
+  @ApiProperty({ example: '12345678901' })
+  @IsString()
+  documentNumber!: string;
+
+  @ApiProperty({ example: 'https://res.cloudinary.com/demo/image/upload/guarantor-id.jpg' })
+  @IsString()
+  url!: string;
+
+  @ApiPropertyOptional({ example: 'purse/guarantor/id-01' })
+  @IsOptional()
+  @IsString()
+  publicId?: string;
+}
+
 export class CreateBankAccountDto {
   @ApiProperty({ example: '058' })
   @IsString()
@@ -189,31 +345,6 @@ export class CreateGuarantorDto {
 }
 
 export class MintKycSessionDto {
-  @ApiProperty({
-    example: 'FACE_LIVENESS_NIN',
-    description:
-      'Identro liveness service type. Use FACE_LIVENESS_ONLY for liveness-only, FACE_LIVENESS_NIN to also match against a NIN record.',
-    enum: ['FACE_LIVENESS_ONLY', 'FACE_LIVENESS_NIN', 'FACE_LIVENESS_BVN', 'FACE_LIVENESS_REFERENCE'],
-  })
-  @IsString()
-  serviceType!: string;
-
-  @ApiProperty({
-    example: 'NIN',
-    description: 'Source type for the liveness check.',
-    enum: ['NIN', 'BVN', 'UPLOADED_REFERENCE'],
-  })
-  @IsString()
-  sourceType!: string;
-
-  @ApiPropertyOptional({
-    example: '27801936116',
-    description: 'Required when sourceType is NIN.',
-  })
-  @IsOptional()
-  @IsString()
-  nin?: string;
-
   @ApiPropertyOptional({
     example: 'RIDER-CONSENT-001',
     description: 'Optional consent reference for audit trail.',
@@ -236,15 +367,24 @@ export class VerifyRiderDocumentDto {
   @Type(() => Number)
   @IsInt()
   documentId!: number;
+}
 
-  @ApiPropertyOptional({
-    example: '/9j/4AAQSkZJRgAB...',
-    description:
-      'Optional base64-encoded selfie for face-match. When provided, the face-verification endpoint is also called.',
-  })
-  @IsOptional()
+export class VerifyDriverLicenseDto {
+  @ApiProperty({ example: 'AAA00000AA00' })
   @IsString()
-  selfieBase64?: string;
+  licenseNumber!: string;
+
+  @ApiProperty({
+    example: true,
+    description: 'Must be true. The rider must explicitly consent before verification.',
+  })
+  @IsBoolean()
+  @Equals(true)
+  consentCaptured!: true;
+
+  @ApiProperty({ example: 'DL-VERIFY-001' })
+  @IsString()
+  idempotencyKey!: string;
 }
 
 export class VerifyGuarantorDocumentDto {

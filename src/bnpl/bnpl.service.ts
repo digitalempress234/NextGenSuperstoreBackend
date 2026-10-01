@@ -18,7 +18,7 @@ import { BnplPlanDto, UpdateBnplPlanDto } from '../checkout/checkout-settings.dt
 import { PaymentsService } from '../payments/payments.service';
 import { AuthenticatedStaff } from '../staff/staff-jwt.guard';
 import { money } from '../common/money';
-import { ApplyBnplDto, ReviewBnplDto } from './bnpl.dto';
+import { ApplyBnplDto, PayBnplRepaymentDto, ReviewBnplDto } from './bnpl.dto';
 
 export function installmentTerms(
   principal: Prisma.Decimal.Value,
@@ -223,6 +223,15 @@ export class BnplService {
             },
           },
         });
+        await tx.bnplInstallment.createMany({
+          data: Array.from({ length: terms.months }, (_, index) => ({
+            applicationId: app.id,
+            sequence: index + 1,
+            amount: index === terms.months - 1 ? terms.finalInstallment : terms.monthlyAmount,
+            dueAt: dueDate(now, index + 1),
+          })),
+          skipDuplicates: true,
+        });
         return group.id;
       },
       { timeout: 20000 },
@@ -231,6 +240,42 @@ export class BnplService {
       application: await this.get(userId, id),
       checkout: await this.payments.summary(userId, groupId),
     };
+  }
+
+  async repayments(userId: number) {
+    const items = await this.prisma.bnplInstallment.findMany({
+      where: { application: { userId, status: 'CONFIRMED' } },
+      include: {
+        application: { select: { id: true, planSnapshot: true } },
+        repayments: { orderBy: { createdAt: 'desc' } },
+      },
+      orderBy: { dueAt: 'asc' },
+    });
+    return {
+      currency: 'NGN',
+      items: items.map((item) => ({
+        ...item,
+        amount: item.amount.toFixed(2),
+        amountPaid: item.amountPaid.toFixed(2),
+        outstanding: item.amount.sub(item.amountPaid).toFixed(2),
+        status: item.status === 'PENDING' && item.dueAt < new Date() ? 'OVERDUE' : item.status,
+      })),
+    };
+  }
+
+  async payRepayment(userId: number, dto: PayBnplRepaymentDto) {
+    const installment = await this.prisma.bnplInstallment.findFirst({
+      where: { id: dto.installmentId, application: { userId, status: 'CONFIRMED' } },
+    });
+    if (!installment) throw new NotFoundException('BNPL installment not found.');
+    if (installment.status === 'PAID')
+      throw new ConflictException('Installment has already been paid.');
+    return this.payments.initializeBnplRepayment(
+      userId,
+      installment.id,
+      installment.amount.sub(installment.amountPaid),
+      dto.method,
+    );
   }
 
   async allPlans() {

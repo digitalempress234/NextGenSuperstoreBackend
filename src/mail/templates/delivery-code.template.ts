@@ -7,13 +7,17 @@ export interface DeliveryCodeTemplateData extends EmailTemplateData {
 }
 
 export function deliveryCodeEmail(data: DeliveryCodeTemplateData): RenderedEmail {
-  const firstName   = escapeHtml(data.firstName ?? 'Customer');
+  const firstName = escapeHtml(data.firstName ?? 'Customer');
   const orderNumber = escapeHtml(data.orderNumber);
-  const appName     = String(data.appName ?? 'Superstore');
+  const appName = String(data.appName ?? 'Superstore');
 
-  const digits = String(data.code).split('').map(d =>
-    `<span style="display:inline-block;width:44px;height:52px;line-height:52px;text-align:center;background:#fff7ed;border:2px solid #fed7aa;border-radius:10px;font-size:28px;font-weight:800;color:#f97316;margin:0 4px;">${escapeHtml(d)}</span>`
-  ).join('');
+  const digits = String(data.code)
+    .split('')
+    .map(
+      (d) =>
+        `<span style="display:inline-block;width:44px;height:52px;line-height:52px;text-align:center;background:#fff7ed;border:2px solid #fed7aa;border-radius:10px;font-size:28px;font-weight:800;color:#f97316;margin:0 4px;">${escapeHtml(d)}</span>`,
+    )
+    .join('');
 
   const subject = ` Delivery code for order ${data.orderNumber} - ${appName}`;
 
@@ -25,7 +29,7 @@ export function deliveryCodeEmail(data: DeliveryCodeTemplateData): RenderedEmail
     'Give this code ONLY to the rider when your order arrives at your door.',
     `The code expires in ${data.expiresInMinutes} minutes after the rider arrives.`,
     '',
-    'DO NOT share this code before the rider is at your door.',
+    'Do not share this code before the rider is at your door.',
     '',
     `Thank you - ${appName} Team`,
   ].join('\n');
@@ -45,6 +49,7 @@ export function deliveryCodeEmail(data: DeliveryCodeTemplateData): RenderedEmail
          Delivery Confirmation Code
       </div>
       <div style="display:inline-flex;justify-content:center;gap:0;">${digits}</div>
+      <span style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(data.code)}</span>
       <div style="margin-top:16px;font-size:13px;color:#78716c;">
          Valid for <strong style="color:#f97316;">${data.expiresInMinutes} minutes</strong> from delivery
       </div>

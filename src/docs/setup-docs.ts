@@ -27,6 +27,11 @@ import { UploadsModule } from '../uploads/uploads.module';
 import { UsersModule } from '../users/users.module';
 import { VendorsModule } from '../vendors/vendors.module';
 import { StaffModule } from '../staff/staff.module';
+import { RewardsModule } from '../rewards/rewards.module';
+import { ReferralsModule } from '../referrals/referrals.module';
+import { ChatsModule } from '../chats/chats.module';
+import { SupportModule } from '../support/support.module';
+import { ScanningModule } from '../scanning/scanning.module';
 
 export function setupScalarDocs(app: INestApplication) {
   const serverUrl = process.env.BASE_URL ?? '/';
@@ -60,7 +65,7 @@ export function setupScalarDocs(app: INestApplication) {
   const adminConfig = baseConfig
     .setDescription(
       'API for System Administrators and Back-Office Staff. ' +
-        'Includes staff authentication, RBAC, KYC approvals, and auditing.',
+        'Uses the purse_staff_token cookie. Motorcycle rider KYC combines automatic identity, liveness, and driver-licence checks with manual motorcycle photo/plate and registration review. Staff can review items separately or use the audited atomic rider decision endpoint; automatic failures cannot be overridden by bulk approval. SUPER_ADMIN directory endpoints include paginated customers, orders, payouts, stores, riders, vendors, and campaigns with their detail pages. Other staff access remains role-scoped.',
     )
     .build();
   const adminDocument = SwaggerModule.createDocument(app, adminConfig, {
@@ -83,6 +88,10 @@ export function setupScalarDocs(app: INestApplication) {
       CatalogModule,
       CheckoutModule,
       BnplModule,
+      RewardsModule,
+      ChatsModule,
+      SupportModule,
+      ScanningModule,
     ],
   });
   app.use(
@@ -97,7 +106,11 @@ export function setupScalarDocs(app: INestApplication) {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
-  const storeConfig = baseConfig.setDescription('API for Store Owners and Managers.').build();
+  const storeConfig = baseConfig
+    .setDescription(
+      'API for VENDOR and STORE_AGENT roles using purse_access_token. Includes store orders, campaigns, inbox, serving riders, competitive-deal comparison, settings, catalogue operations, packing scans, handoff QR generation, fulfillment, wallets, and notifications.',
+    )
+    .build();
   const storeDocument = SwaggerModule.createDocument(app, storeConfig, {
     include: [
       StoresModule,
@@ -106,6 +119,9 @@ export function setupScalarDocs(app: INestApplication) {
       UploadsModule,
       NotificationsModule,
       SettlementsModule,
+      ChatsModule,
+      SupportModule,
+      ScanningModule,
     ],
   });
 
@@ -135,9 +151,13 @@ export function setupScalarDocs(app: INestApplication) {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
-  const riderConfig = baseConfig.setDescription('API for Delivery Personnel.').build();
+  const riderConfig = baseConfig
+    .setDescription(
+      'API for motorcycle rider applicants and approved RIDER users using purse_access_token. KYC uses liveness only (no separate face match), automatically verifies Nigerian driver licences through Identro, and sends motorcycle photo/plate and registration evidence to staff review. Bank details are required before withdrawal rather than onboarding approval. Guarantor, ownership evidence, insurance, and roadworthiness are conditional. Includes delivery offers, secure QR verification, item pickup scans, delivery confirmation, live tracking, wallet, and notifications.',
+    )
+    .build();
   const riderDocument = SwaggerModule.createDocument(app, riderConfig, {
-    include: [RidersModule, DeliveryModule, NotificationsModule],
+    include: [RidersModule, DeliveryModule, NotificationsModule, ScanningModule, UploadsModule],
   });
 
   if (riderDocument.paths) {
@@ -160,10 +180,12 @@ export function setupScalarDocs(app: INestApplication) {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
-  const publicConfig = baseConfig.setDescription(
-    'API for Customers and Public access. ' +
-    'Includes authentication, catalog browsing, cart, checkout, wallet, orders, and notifications.',
-  ).build();
+  const publicConfig = baseConfig
+    .setDescription(
+      'API for Customers and Public access. ' +
+        'Authenticated CUSTOMER routes use the purse_access_token HttpOnly cookie; public routes require no cookie. Includes catalog and barcode lookup, rewards, referrals, cart, checkout, wallet deposit/withdrawal/ledger, order QR display, orders/returns, store chat, support conversations, and notifications.',
+    )
+    .build();
   const publicDocument = SwaggerModule.createDocument(app, publicConfig, {
     include: [
       AuthModule,
@@ -178,6 +200,11 @@ export function setupScalarDocs(app: INestApplication) {
       ReviewsModule,
       LocationsModule,
       NotificationsModule,
+      RewardsModule,
+      ReferralsModule,
+      ChatsModule,
+      SupportModule,
+      ScanningModule,
     ],
   });
   for (const path of Object.keys(publicDocument.paths)) {

@@ -56,13 +56,13 @@ export class BrowseMarketplaceDto {
   @Min(1)
   page = 1;
 
-  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 100, default: 20 })
+  @ApiPropertyOptional({ example: 15, minimum: 1, maximum: 100, default: 15 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
-  limit = 10;
+  limit = 15;
 }
 
 export class SearchStoresDto {
@@ -88,13 +88,13 @@ export class SearchStoresDto {
   @Min(1)
   page = 1;
 
-  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 100, default: 20 })
+  @ApiPropertyOptional({ example: 15, minimum: 1, maximum: 100, default: 15 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
-  limit = 10;
+  limit = 15;
 }
 
 export class AddWishlistDto {

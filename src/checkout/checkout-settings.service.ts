@@ -12,9 +12,12 @@ export class CheckoutSettingsService {
   constructor(private readonly prisma: PrismaService) {}
   async settings(tx: Prisma.TransactionClient = this.prisma): Promise<CheckoutSettingsDto> {
     const row = await tx.platformConfig.findUnique({ where: { key: 'checkout_settings' } });
-    return row
-      ? (JSON.parse(row.value) as CheckoutSettingsDto)
-      : { deliveryFeePerStore: 0, deliveryEnabled: false, opayEnabled: false };
+    if (!row) return { deliveryFeePerStore: 0, deliveryEnabled: false };
+    const parsed = JSON.parse(row.value) as CheckoutSettingsDto;
+    return {
+      deliveryFeePerStore: parsed.deliveryFeePerStore,
+      deliveryEnabled: parsed.deliveryEnabled,
+    };
   }
   async updateSettings(actorId: number, dto: CheckoutSettingsDto) {
     return this.prisma.$transaction(async (tx) => {

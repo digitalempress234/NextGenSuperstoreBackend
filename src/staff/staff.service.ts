@@ -23,45 +23,119 @@ import {
 const STAFF_PERMISSIONS: Record<StaffRole, string[]> = {
   SUPER_ADMIN: ['admin.*'],
   OPERATIONS_ADMIN: [
-    'users.view', 'stores.view', 'stores.update', 'products.view', 'orders.view',
-    'orders.cancel', 'orders.status.update', 'deliveries.view', 'deliveries.assign',
-    'deliveries.status.update', 'reports.view', 'roles.assign', 'roles.revoke',
+    'users.view',
+    'stores.view',
+    'stores.update',
+    'products.view',
+    'orders.view',
+    'orders.cancel',
+    'orders.status.update',
+    'deliveries.view',
+    'deliveries.assign',
+    'deliveries.status.update',
+    'reports.view',
+    'roles.assign',
+    'roles.revoke',
+    'rewards.manage',
+    'support.tickets.manage',
+    'chats.moderate',
   ],
   FINANCE_ADMIN: [
-    'orders.view', 'orders.refund.approve', 'payments.view', 'payments.reconcile',
-    'payments.reverse', 'wallets.view', 'wallets.credit', 'wallets.debit',
-    'reports.view', 'reports.export',
+    'orders.view',
+    'orders.refund.approve',
+    'payments.view',
+    'payments.reconcile',
+    'payments.reverse',
+    'wallets.view',
+    'wallets.credit',
+    'wallets.debit',
+    'reports.view',
+    'reports.export',
+    'rewards.manage',
   ],
   RISK_COMPLIANCE_ADMIN: [
-    'users.view', 'users.freeze', 'riders.view', 'kyc.read', 'kyc.review',
-    'risk.flag', 'risk.blacklist.create', 'risk.blacklist.remove',
-    'audit.view', 'reports.view',
+    'users.view',
+    'users.freeze',
+    'riders.view',
+    'kyc.read',
+    'kyc.review',
+    'risk.flag',
+    'risk.blacklist.create',
+    'risk.blacklist.remove',
+    'audit.view',
+    'reports.view',
   ],
   MERCHANT_ADMIN: [
-    'stores.view', 'stores.create', 'stores.update', 'stores.activate', 'stores.suspend',
-    'merchants.approve', 'merchants.suspend', 'products.view', 'products.create',
-    'products.update', 'inventory.adjust', 'orders.view',
+    'stores.view',
+    'stores.create',
+    'stores.update',
+    'stores.activate',
+    'stores.suspend',
+    'merchants.approve',
+    'merchants.suspend',
+    'products.view',
+    'products.create',
+    'products.update',
+    'inventory.adjust',
+    'orders.view',
   ],
   CUSTOMER_SUPPORT_ADMIN: [
-    'users.view', 'users.update', 'users.freeze', 'orders.view', 'orders.cancel',
-    'orders.refund.initiate', 'products.view', 'stores.view',
+    'users.view',
+    'users.update',
+    'users.freeze',
+    'orders.view',
+    'orders.cancel',
+    'orders.refund.initiate',
+    'products.view',
+    'stores.view',
+    'support.tickets.manage',
+    'chats.moderate',
   ],
   CREDIT_BNPL_ADMIN: [
-    'users.view', 'bnpl.loan.create', 'bnpl.limit.adjust',
-    'bnpl.repayment.restructure', 'reports.view',
+    'users.view',
+    'bnpl.loan.create',
+    'bnpl.limit.adjust',
+    'bnpl.repayment.restructure',
+    'reports.view',
+    'bnpl.repayments.view',
   ],
   AUDIT_OBSERVER_ADMIN: [
-    'users.view', 'stores.view', 'products.view', 'orders.view', 'payments.view',
-    'deliveries.view', 'riders.view', 'kyc.read', 'reports.view', 'reports.export',
-    'audit.view', 'audit.export',
+    'users.view',
+    'stores.view',
+    'products.view',
+    'orders.view',
+    'payments.view',
+    'deliveries.view',
+    'riders.view',
+    'kyc.read',
+    'reports.view',
+    'reports.export',
+    'audit.view',
+    'audit.export',
   ],
   REGIONAL_ADMIN: [
-    'users.view', 'stores.view', 'stores.update', 'products.view', 'orders.view',
-    'orders.cancel', 'deliveries.view', 'deliveries.assign', 'riders.view', 'reports.view',
+    'users.view',
+    'stores.view',
+    'stores.update',
+    'products.view',
+    'orders.view',
+    'orders.cancel',
+    'deliveries.view',
+    'deliveries.assign',
+    'riders.view',
+    'reports.view',
   ],
   COMPLIANCE_LEAD: [
-    'users.view', 'users.freeze', 'riders.view', 'kyc.read', 'kyc.review',
-    'risk.flag', 'risk.blacklist.create', 'audit.view', 'audit.export', 'reports.view',
+    'users.view',
+    'users.freeze',
+    'riders.view',
+    'kyc.read',
+    'kyc.review',
+    'risk.flag',
+    'risk.blacklist.create',
+    'audit.view',
+    'audit.export',
+    'reports.view',
   ],
 };
 
@@ -78,8 +152,6 @@ export class StaffService {
     private readonly mail: MailService,
   ) {}
 
-  
-
   async login(dto: StaffLoginDto, ipAddress?: string, userAgent?: string) {
     const email = dto.email.trim().toLowerCase();
     const staff = await this.prisma.staffUser.findUnique({ where: { email } });
@@ -93,7 +165,12 @@ export class StaffService {
       throw new UnauthorizedException('Invalid credentials or inactive account.');
     }
 
-    const { accessToken, sessionId } = await this.issueTokens(staff.id, email, ipAddress, userAgent);
+    const { accessToken, sessionId } = await this.issueTokens(
+      staff.id,
+      email,
+      ipAddress,
+      userAgent,
+    );
 
     await this.prisma.staffUser.update({
       where: { id: staff.id },
@@ -162,7 +239,7 @@ export class StaffService {
         where: { id: staffId },
         data: { passwordHash, mustChangePassword: false },
       }),
-      
+
       this.prisma.staffSession.updateMany({
         where: { staffUserId: staffId, revokedAt: null },
         data: { revokedAt: new Date() },
@@ -171,8 +248,6 @@ export class StaffService {
 
     return { passwordChanged: true };
   }
-
-  
 
   async create(dto: CreateStaffUserDto, createdById: number) {
     const email = dto.email.trim().toLowerCase();
@@ -206,21 +281,15 @@ export class StaffService {
       },
     });
 
-    
     const frontendUrl = this.config.get<string>('FRONTEND_URL', 'https://admin.purse.com');
     const loginUrl = `${frontendUrl}/login`;
-    await this.mail.sendTemplate(
-      'staffWelcome',
-      email,
-      {
-        firstName: dto.firstName,
-        staffEmail: email,
-        temporaryPassword,
-        role: dto.role,
-        loginUrl,
-      },
-      
-    );
+    await this.mail.sendTemplate('staffWelcome', email, {
+      firstName: dto.firstName,
+      staffEmail: email,
+      temporaryPassword,
+      role: dto.role,
+      loginUrl,
+    });
 
     return {
       id: staff.id,
@@ -233,7 +302,7 @@ export class StaffService {
     };
   }
 
-  async findAll(page = 1, limit = 20) {
+  async findAll(page = 1, limit = 15) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       this.prisma.staffUser.findMany({
@@ -338,7 +407,6 @@ export class StaffService {
       data: { status: 'INACTIVE' },
     });
 
-    
     await this.prisma.staffSession.updateMany({
       where: { staffUserId: id, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -358,8 +426,6 @@ export class StaffService {
     return { id: updated.id, status: updated.status, deactivated: true };
   }
 
-  
-
   private async issueTokens(
     staffId: number,
     email: string,
@@ -368,7 +434,7 @@ export class StaffService {
   ) {
     const sessionSecret = randomBytes(32).toString('hex');
     const sessionTokenHash = createHash('sha256').update(sessionSecret).digest('hex');
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); 
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     const session = await this.prisma.staffSession.create({
       data: { staffUserId: staffId, sessionTokenHash, expiresAt, ipAddress, userAgent },
@@ -385,11 +451,15 @@ export class StaffService {
     return { accessToken, sessionId: session.id };
   }
 
-  
   async validateSession(staffId: number, sessionId: number) {
     const session = await this.prisma.staffSession.findUnique({ where: { id: sessionId } });
 
-    if (!session || session.staffUserId !== staffId || session.revokedAt || session.expiresAt <= new Date()) {
+    if (
+      !session ||
+      session.staffUserId !== staffId ||
+      session.revokedAt ||
+      session.expiresAt <= new Date()
+    ) {
       throw new UnauthorizedException('Session has expired or been revoked.');
     }
 
@@ -411,20 +481,17 @@ export class StaffService {
   }
 
   private generatePassword(): string {
-    const upper   = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    const lower   = 'abcdefghjkmnpqrstuvwxyz';
-    const digits  = '23456789';
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lower = 'abcdefghjkmnpqrstuvwxyz';
+    const digits = '23456789';
     const symbols = '!@#$%^&*';
-    const all     = upper + lower + digits + symbols;
+    const all = upper + lower + digits + symbols;
 
     const pick = (chars: string) => chars[Math.floor(Math.random() * chars.length)];
 
-    
     const required = [pick(upper), pick(lower), pick(digits), pick(symbols)];
     const rest = Array.from({ length: 8 }, () => pick(all));
 
-    return [...required, ...rest]
-      .sort(() => Math.random() - 0.5)
-      .join('');
+    return [...required, ...rest].sort(() => Math.random() - 0.5).join('');
   }
 }

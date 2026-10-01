@@ -1,9 +1,13 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CheckoutService, quoteFingerprint } from '../src/checkout/checkout.service';
+import {
+  CheckoutService,
+  createOrderNumber,
+  quoteFingerprint,
+} from '../src/checkout/checkout.service';
 import type { CheckoutSettingsService } from '../src/checkout/checkout-settings.service';
 import { PlaceOrderDto } from '../src/checkout/dto/checkout.dto';
 import type { CartService } from '../src/cart/cart.service';
@@ -22,6 +26,187 @@ import { OrdersService } from '../src/orders/orders.service';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 
 const decimal = (value: string | number) => new Prisma.Decimal(value);
+
+describe('checkout public contract', () => {
+  it('creates a short, dated, unambiguous order number', () => {
+    expect(createOrderNumber(new Date('2026-10-01T10:00:00Z'))).toMatch(
+      /^PUR-261001-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{8}$/,
+    );
+  });
+
+  it('rejects OPay for new order placement', async () => {
+    const dto = plainToInstance(PlaceOrderDto, {
+      cartId: 1,
+      deliveryMethod: 'store_pickup',
+      pickupStationId: 1,
+      paymentMethod: 'opay',
+    });
+    const errors = await validate(dto);
+    expect(errors.some((error) => error.property === 'paymentMethod')).toBe(true);
+  });
+
+  it('accepts bank transfer for new order placement', async () => {
+    const dto = plainToInstance(PlaceOrderDto, {
+      cartId: 1,
+      deliveryMethod: 'store_pickup',
+      pickupStationId: 1,
+      paymentMethod: 'bank_transfer',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+  });
+});
+
+describe('Paystack dedicated wallet funding', () => {
+  it('creates BVN-free temporary transfer instructions for an exact wallet top-up amount', async () => {
+    const db = {
+      user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ email: 'ada@example.com' }) },
+      payment: {
+        create: jest.fn().mockResolvedValue({ id: 56 }),
+        update: jest.fn(),
+      },
+    };
+    const paystack = {
+      createBankTransferCharge: jest.fn().mockImplementation((reference: string) => ({
+        reference,
+        status: 'pending_bank_transfer',
+        display_text: 'Make a transfer',
+        account_name: 'SUPERSTORE',
+        account_number: '1260257501',
+        bank: { name: 'Paystack-Titan', slug: 'titan-paystack', id: 1 },
+        account_expires_at: '2026-10-01T18:30:00.000Z',
+      })),
+    };
+    const service = new PaymentsService(
+      db as unknown as PrismaService,
+      paystack as unknown as PaystackClient,
+      {} as SettlementsService,
+      {} as CartService,
+      {} as NotificationsService,
+    );
+    const result = service.topupWalletByTransfer(7, decimal(5000));
+    await expect(result).resolves.toEqual(
+      expect.objectContaining({
+        transactionRef: expect.stringMatching(/^TOPUP-TRANSFER-7-/),
+        amount: '5000.00',
+        paymentUrl: null,
+        transferInstructions: expect.objectContaining({
+          accountNumber: '1260257501',
+          amount: '5000.00',
+        }),
+      }),
+    );
+    expect(paystack.createBankTransferCharge).toHaveBeenCalledWith(
+      expect.stringMatching(/^TOPUP-TRANSFER-7-/),
+      'ada@example.com',
+      decimal(5000),
+      expect.any(Date),
+      expect.objectContaining({ purpose: 'WALLET_TRANSFER_TOPUP', userId: 7 }),
+    );
+  });
+
+  it('credits the mapped wallet exactly once from a verified dedicated-account webhook', async () => {
+    const db = {
+      paymentWebhookEvent: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn(),
+      },
+      payment: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({ id: 55 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 55, status: 'PENDING' }),
+        update: jest.fn(),
+      },
+      walletFundingAccount: {
+        findFirst: jest.fn().mockResolvedValue({ userId: 7, status: 'ACTIVE' }),
+      },
+      wallet: {
+        upsert: jest.fn().mockResolvedValue({ id: 8 }),
+        update: jest.fn(),
+      },
+      walletTransaction: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+      },
+      notification: { upsert: jest.fn() },
+      $queryRaw: jest.fn(),
+      $transaction: jest.fn(),
+    };
+    db.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
+    const paystack = {
+      verify: jest.fn().mockResolvedValue({
+        id: 900,
+        status: 'success',
+        reference: 'dva-ref',
+        amount: 500000,
+        currency: 'NGN',
+        customer: { customer_code: 'CUS_123' },
+        authorization: {
+          channel: 'dedicated_nuban',
+          receiver_bank_account_number: '9930000737',
+        },
+      }),
+    };
+    const service = new PaymentsService(
+      db as unknown as PrismaService,
+      paystack as unknown as PaystackClient,
+      {} as SettlementsService,
+      {} as CartService,
+      {} as NotificationsService,
+    );
+
+    await expect(
+      service.handleWebhook({ event: 'charge.success', data: { reference: 'dva-ref' } }),
+    ).resolves.toEqual({ received: true });
+    expect(db.wallet.update).toHaveBeenCalledWith({
+      where: { id: 8 },
+      data: { balance: { increment: decimal(5000) } },
+    });
+    expect(db.walletTransaction.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reference: 'DVA-CREDIT-dva-ref', type: 'CREDIT' }),
+      }),
+    );
+    expect(db.paymentWebhookEvent.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ processed: true, paymentId: 55 }),
+      }),
+    );
+  });
+});
+
+describe('order status resource scope', () => {
+  it('blocks a user with the permission from updating another store or rider order', async () => {
+    const prisma = {
+      order: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 9,
+          currentStatus: 'CONFIRMED',
+          store: { ownerUserId: 20, members: [] },
+          delivery: { riderId: 30 },
+        }),
+      },
+    };
+    const service = new OrdersService(
+      prisma as unknown as PrismaService,
+      {} as NotificationsService,
+      {} as CartService,
+    );
+    await expect(
+      service.setStatus(
+        {
+          id: 10,
+          email: 'outsider@example.com',
+          roles: ['VENDOR'],
+          permissions: ['orders.status.update'],
+          merchantScopeIds: [],
+          regionScopes: [],
+        },
+        9,
+        'PREPARING',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
 
 describe('Checkout completion compatibility', () => {
   it('redirects a verified payment to the order-specific app deep link', async () => {
@@ -70,6 +255,7 @@ describe('Checkout completion compatibility', () => {
       {} as PaystackClient,
       {} as SettlementsService,
       {} as CartService,
+      { processOrderConfirmations: jest.fn() } as never,
     );
     const verify = jest.spyOn(service, 'verifyReference');
     verify.mockResolvedValueOnce({ status: 'PENDING', paymentGroupId: 1 });
@@ -312,6 +498,7 @@ describe('Payment verification', () => {
         findUniqueOrThrow: jest.fn().mockResolvedValue(payment),
         update: jest.fn(),
       },
+      checkoutPaymentAllocation: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn(),
       $transaction: jest.fn(),
     };
@@ -326,6 +513,7 @@ describe('Payment verification', () => {
       paystack as unknown as PaystackClient,
       {} as SettlementsService,
       { lock: jest.fn() } as unknown as CartService,
+      { processOrderConfirmations: jest.fn() } as never,
     );
     const complete = jest.spyOn(service, 'completeGroup').mockResolvedValue();
     const fail = jest.spyOn(service, 'failGroup').mockResolvedValue();
@@ -413,7 +601,7 @@ describe('Cart clearing and settlement idempotence', () => {
         update: jest.fn(),
         delete: jest.fn(),
       },
-      notification: { create: jest.fn() },
+      orderConfirmationOutbox: { upsert: jest.fn() },
     };
     const settlements = { settleOrder: jest.fn() };
     const service = new PaymentsService(
@@ -421,6 +609,7 @@ describe('Cart clearing and settlement idempotence', () => {
       {} as PaystackClient,
       settlements as unknown as SettlementsService,
       { recalculate: jest.fn() } as unknown as CartService,
+      { processOrderConfirmations: jest.fn() } as never,
     );
     await service.completeGroup(db as unknown as Prisma.TransactionClient, 1);
     await service.completeGroup(db as unknown as Prisma.TransactionClient, 1);
@@ -430,7 +619,7 @@ describe('Cart clearing and settlement idempotence', () => {
     });
     expect(db.cartItem.delete).not.toHaveBeenCalled();
     expect(settlements.settleOrder).toHaveBeenCalledTimes(1);
-    expect(db.notification.create).toHaveBeenCalledTimes(1);
+    expect(db.orderConfirmationOutbox.upsert).toHaveBeenCalledTimes(1);
   });
 });
 

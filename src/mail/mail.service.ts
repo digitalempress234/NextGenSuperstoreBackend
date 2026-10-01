@@ -34,20 +34,38 @@ export class MailService {
     to: string,
     data: EmailTemplateData,
     userId?: number,
+    eventKey?: string,
   ): Promise<void> {
     const templateFn = templates[templateKey] as (data: EmailTemplateData) => RenderedEmail;
     const rendered = templateFn({
       ...data,
       appName: data.appName ?? this.appName,
     });
-    const log = await this.prisma.emailLog.create({
-      data: {
-        userId,
-        toAddress: to,
-        templateKey,
-        subject: rendered.subject,
-      },
-    });
+    const existing = eventKey
+      ? await this.prisma.emailLog.findUnique({ where: { eventKey } })
+      : null;
+    if (existing?.status === 'SENT') return;
+    const log = existing
+      ? await this.prisma.emailLog.update({
+          where: { id: existing.id },
+          data: {
+            userId,
+            toAddress: to,
+            templateKey,
+            subject: rendered.subject,
+            status: 'PENDING',
+            errorMessage: null,
+          },
+        })
+      : await this.prisma.emailLog.create({
+          data: {
+            userId,
+            toAddress: to,
+            templateKey,
+            subject: rendered.subject,
+            eventKey,
+          },
+        });
 
     try {
       const senderEmail = process.env.MAIL_FROM ?? process.env.SMTP_USER;

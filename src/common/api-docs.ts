@@ -88,10 +88,6 @@ export function CreatedExample(example: unknown, description = 'Created successf
 }
 
 /**
- * Attaches an x-required-permissions extension visible in Swagger/Scalar
- * and adds the standard 401 Unauthorized response.
- * Use on every protected endpoint alongside @RequirePermissions().
- *
  * @param permissions 
  * @param roles        
  */

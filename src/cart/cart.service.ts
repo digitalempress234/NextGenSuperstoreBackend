@@ -9,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AddCartItemDto } from './dto/cart.dto';
 
 export const cartInclude = {
+  voucher: { include: { voucher: true } },
+  coupon: { include: { coupon: true } },
   items: {
     orderBy: { id: 'asc' as const },
     include: {

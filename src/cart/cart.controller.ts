@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Optional,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
@@ -6,12 +16,31 @@ import { RequirePermissions } from '../common/permissions.decorator';
 import { CreatedExample, OkExample, StandardErrors } from '../common/api-docs';
 import { AddCartItemDto, UpdateCartItemDto } from './dto/cart.dto';
 import { CartService } from './cart.service';
+import { CouponService } from './coupon.service';
+import { ApplyCouponDto } from './dto/coupon.dto';
 
 @ApiTags('Cart')
 @ApiCookieAuth('purse_access_token')
 @Controller('cart')
 export class CartController {
-  constructor(private readonly cartService: CartService) {}
+  constructor(
+    private readonly cartService: CartService,
+    @Optional() private readonly coupons?: CouponService,
+  ) {}
+
+  @Post('coupons/apply')
+  @RequirePermissions('cart.manage')
+  @ApiOperation({ summary: 'Customer: validate and apply a coupon to the active cart' })
+  applyCoupon(@CurrentUser('id') userId: number, @Body() dto: ApplyCouponDto) {
+    return this.coupons!.apply(userId, dto.code);
+  }
+
+  @Delete('coupons/:code')
+  @RequirePermissions('cart.manage')
+  @ApiOperation({ summary: 'Customer: remove an applied coupon from the active cart' })
+  removeCoupon(@CurrentUser('id') userId: number, @Param('code') code: string) {
+    return this.coupons!.remove(userId, code);
+  }
 
   @Get()
   @RequirePermissions('cart.manage')

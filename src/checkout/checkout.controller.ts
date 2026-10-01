@@ -24,15 +24,14 @@ export class CheckoutController {
   @OkExample({
     deliveryFeePerStore: 1500,
     deliveryEnabled: true,
-    opayEnabled: false,
-    paymentMethods: ['card', 'wallet'],
+    paymentMethods: ['card', 'bank_transfer', 'wallet'],
     currency: 'NGN',
   })
   async options() {
     const settings = await this.settings.settings();
     return {
       ...settings,
-      paymentMethods: ['card', 'wallet', ...(settings.opayEnabled ? ['opay'] : [])],
+      paymentMethods: ['card', 'bank_transfer', 'wallet'],
       currency: 'NGN',
     };
   }
@@ -57,6 +56,28 @@ export class CheckoutController {
   @RequirePermissions('checkout.create')
   review(@CurrentUser('id') userId: number, @Body() dto: CreateCheckoutDto) {
     return this.checkoutService.quote(userId, dto);
+  }
+
+  @Get('pending')
+  @ApiOperation({
+    summary: "Get the current user's pending or processing checkout",
+    description:
+      'Returns the active unpaid checkout group for the authenticated user, or `null` if there is none. ' +
+      'Use this on app resume or after a failed payment to check whether an unresolved checkout exists ' +
+      'before allowing the user to start a new one. ' +
+      'The response shape is identical to `GET /checkout/:id`.',
+  })
+  @OkExample({
+    paymentGroupId: 20,
+    paymentStatus: 'pending',
+    paymentMethod: 'card',
+    paymentUrl: 'https://checkout.paystack.com/abc123',
+    total: '121500.00',
+    currency: 'NGN',
+    orders: [{ id: 101, orderNumber: 'PUR-...' }],
+  })
+  pending(@CurrentUser('id') userId: number) {
+    return this.payments.pendingCheckout(userId);
   }
 
   @Get(':id')
@@ -94,7 +115,7 @@ export class CheckoutController {
     orders: [
       {
         id: 501,
-        orderNumber: 'PUR-1720000000-A1B2C3D4',
+        orderNumber: 'PUR-261001-A1B2C3D4',
         storeId: 10,
         fulfillmentType: 'DELIVERY',
         currentStatus: 'ORDER_RECEIVED',
@@ -102,7 +123,7 @@ export class CheckoutController {
       },
       {
         id: 502,
-        orderNumber: 'PUR-1720000000-E5F6G7H8',
+        orderNumber: 'PUR-261001-E5F6G7H8',
         storeId: 12,
         fulfillmentType: 'DELIVERY',
         currentStatus: 'ORDER_RECEIVED',

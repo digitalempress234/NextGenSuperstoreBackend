@@ -34,6 +34,11 @@ import { CsrfGuard } from './common/csrf.guard';
 import { PermissionGuard } from './common/permission.guard';
 import { StaffModule } from './staff/staff.module';
 import { BnplModule } from './bnpl/bnpl.module';
+import { RewardsModule } from './rewards/rewards.module';
+import { ReferralsModule } from './referrals/referrals.module';
+import { ChatsModule } from './chats/chats.module';
+import { SupportModule } from './support/support.module';
+import { ScanningModule } from './scanning/scanning.module';
 
 @Module({
   imports: [
@@ -72,6 +77,11 @@ import { BnplModule } from './bnpl/bnpl.module';
     StaffModule,
     IdentroModule,
     BnplModule,
+    RewardsModule,
+    ReferralsModule,
+    ChatsModule,
+    SupportModule,
+    ScanningModule,
   ],
   providers: [
     {

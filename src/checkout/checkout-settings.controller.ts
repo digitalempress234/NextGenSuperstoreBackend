@@ -50,7 +50,7 @@ export class CheckoutSettingsController {
     return this.settings.settings();
   }
   @Put('settings')
-  @ApiOperation({ summary: 'Configure per-store delivery fee, delivery, and OPay availability' })
+  @ApiOperation({ summary: 'Configure per-store delivery fee and delivery availability' })
   update(@Req() req: { staffUser: AuthenticatedStaff }, @Body() dto: CheckoutSettingsDto) {
     assertCheckoutStaff(req.staffUser, ['OPERATIONS_ADMIN', 'FINANCE_ADMIN']);
     return this.settings.updateSettings(req.staffUser.id, dto);

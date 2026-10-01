@@ -38,7 +38,6 @@ export class CheckoutSettingsDto {
   @Max(10000000)
   deliveryFeePerStore!: number;
   @ApiProperty() @Transform(({ obj, key }) => obj[key]) @IsBoolean() deliveryEnabled!: boolean;
-  @ApiProperty() @Transform(({ obj, key }) => obj[key]) @IsBoolean() opayEnabled!: boolean;
 }
 export class BnplPlanDto {
   @ApiProperty({ enum: ['nextgen_purse', 'easybuy', 'wallet_bnpl'] })

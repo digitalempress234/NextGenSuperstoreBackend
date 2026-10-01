@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeliveryTrackingGateway } from './delivery-tracking.gateway';
 import { SettlementsService } from '../settlements/settlements.service';
+import { canTransitionOrder } from '../orders/order-status';
 
 const allowedTransitions: Record<DeliveryStatus, DeliveryStatus[]> = {
   PENDING: ['OFFERED', 'ASSIGNED', 'CANCELLED'],
@@ -93,7 +94,7 @@ export class DeliveryService {
         riderId,
         status: 'PENDING',
       },
-      include: { delivery: true },
+      include: { delivery: { include: { order: true } } },
     });
 
     if (!offer) {
@@ -103,6 +104,7 @@ export class DeliveryService {
     const delivery = await this.prisma.$transaction(async (tx) => {
       const delivery = await tx.delivery.findUnique({
         where: { id: offer.deliveryId },
+        include: { order: true },
       });
 
       if (!delivery || delivery.riderId) {
@@ -122,6 +124,34 @@ export class DeliveryService {
           assignedAt: new Date(),
         },
       });
+
+      const order = delivery.order;
+      if (
+        order.currentStatus !== 'RIDER_ASSIGNED' &&
+        !canTransitionOrder(order.currentStatus, 'RIDER_ASSIGNED')
+      ) {
+        throw new BadRequestException(
+          `Order ${order.id} is not ready for rider assignment from ${order.currentStatus}.`,
+        );
+      }
+      if (
+        order.currentStatus !== 'RIDER_ASSIGNED' &&
+        canTransitionOrder(order.currentStatus, 'RIDER_ASSIGNED')
+      ) {
+        await tx.order.update({
+          where: { id: order.id },
+          data: { currentStatus: 'RIDER_ASSIGNED' },
+        });
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: order.id,
+            fromStatus: order.currentStatus,
+            toStatus: 'RIDER_ASSIGNED',
+            changedById: riderId,
+            reason: 'Rider accepted the delivery assignment.',
+          },
+        });
+      }
 
       await this.settlements.holdRiderEarning(offer.deliveryId, tx);
 
@@ -155,6 +185,7 @@ export class DeliveryService {
   ) {
     const delivery = await this.prisma.delivery.findUnique({
       where: { id: deliveryId },
+      include: { order: true },
     });
 
     if (!delivery) {
@@ -169,29 +200,30 @@ export class DeliveryService {
       throw new BadRequestException(`Invalid delivery transition: ${delivery.status} -> ${status}`);
     }
 
+    if (status === 'PICKED_UP' || status === 'DELIVERED') {
+      throw new BadRequestException(
+        status === 'PICKED_UP'
+          ? 'Confirm pickup with the store handoff QR instead of setting PICKED_UP directly.'
+          : 'Confirm delivery with the customer QR instead of setting DELIVERED directly.',
+      );
+    }
+
+    const synchronizedOrderStatus =
+      status === 'IN_TRANSIT' || status === 'OUT_FOR_DELIVERY' ? 'OUT_FOR_DELIVERY' : null;
+    if (
+      synchronizedOrderStatus &&
+      delivery.order.currentStatus !== synchronizedOrderStatus &&
+      !canTransitionOrder(delivery.order.currentStatus, synchronizedOrderStatus)
+    ) {
+      throw new BadRequestException(
+        `Order ${delivery.orderId} cannot move from ${delivery.order.currentStatus} to ${synchronizedOrderStatus}.`,
+      );
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
-      const data: { status: DeliveryStatus; pickedUpAt?: Date; deliveredAt?: Date } = {
-        status,
-      };
-
-      if (status === 'PICKED_UP') {
-        data.pickedUpAt = new Date();
-      }
-
-      this.trackingGateway.broadcastStatus({
-        deliveryId,
-        status,
-        occurredAt: new Date().toISOString(),
-      });
-
-      if (status === 'DELIVERED') {
-        data.deliveredAt = new Date();
-        await this.settlements.releaseRiderEarning(deliveryId, tx);
-      }
-
       const updated = await tx.delivery.update({
         where: { id: deliveryId },
-        data,
+        data: { status },
       });
 
       await tx.deliveryStatusUpdate.create({
@@ -203,6 +235,22 @@ export class DeliveryService {
         },
       });
 
+      if (synchronizedOrderStatus && delivery.order.currentStatus !== synchronizedOrderStatus) {
+        await tx.order.update({
+          where: { id: delivery.orderId },
+          data: { currentStatus: synchronizedOrderStatus },
+        });
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: delivery.orderId,
+            fromStatus: delivery.order.currentStatus,
+            toStatus: synchronizedOrderStatus,
+            changedById: riderId,
+            reason: `Synchronized from rider delivery status ${status}.`,
+          },
+        });
+      }
+
       return updated;
     });
 
@@ -211,24 +259,6 @@ export class DeliveryService {
       status,
       occurredAt: new Date().toISOString(),
     });
-
-    if (status === 'DELIVERED') {
-      const withOrder = await this.prisma.delivery.findUnique({
-        where: { id: deliveryId },
-        include: { order: true },
-      });
-      if (withOrder) {
-        await this.notifications.notifyUser({
-          userId: withOrder.order.userId,
-          type: 'DELIVERY_COMPLETED',
-          title: 'Order delivered',
-          message: `Your order ${withOrder.order.orderNumber} has been delivered.`,
-          data: { deliveryId: withOrder.id, orderId: withOrder.orderId },
-          templateKey: 'deliveryCompleted',
-          templateData: { orderNumber: withOrder.order.orderNumber },
-        });
-      }
-    }
 
     return updated;
   }

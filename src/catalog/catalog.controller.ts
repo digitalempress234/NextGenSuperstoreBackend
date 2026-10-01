@@ -36,7 +36,7 @@ export class CatalogController {
   @ApiQuery({ name: 'q', required: false, example: 'coke' })
   @ApiQuery({ name: 'categoryId', required: false, example: 4 })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
   @OkExample({
     items: [
       {
@@ -58,7 +58,7 @@ export class CatalogController {
       },
     ],
     page: 1,
-    limit: 10,
+    limit: 15,
     total: 1,
     pages: 1,
   })

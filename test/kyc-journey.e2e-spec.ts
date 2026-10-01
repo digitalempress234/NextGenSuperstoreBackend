@@ -9,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 
 import { AppModule } from '../src/app.module';
 import { QoreIDService } from '../src/qoreid/qoreid.service';
+import { IdentroService } from '../src/identro/identro.service';
 
 const adapter = new PrismaMariaDb(process.env.DATABASE_URL as string);
 const prisma = new PrismaClient({ adapter });
@@ -34,6 +35,18 @@ describe('KYC & CAC Verification Journey E2E', () => {
     await app.init();
 
     const qoreidService = app.get(QoreIDService);
+    const identroService = app.get(IdentroService);
+    jest.spyOn(identroService, 'shouldAutoApprove', 'get').mockReturnValue(true);
+    jest.spyOn(identroService, 'mintSdkSessionToken').mockResolvedValue({
+      sessionId: 'test-session-id',
+      sdkToken: 'mock-sdk-token',
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    });
+    jest.spyOn(identroService, 'verifyNin').mockResolvedValue({
+      identroReference: 'nin-ref-123',
+      identroStatus: 'VERIFIED',
+      identroRaw: { success: true, data: { status: 'COMPLETED' } },
+    });
     jest.spyOn(qoreidService, 'shouldAutoApprove', 'get').mockReturnValue(true);
     jest.spyOn(qoreidService, 'mintSdkSessionToken').mockResolvedValue({
       sessionId: 'test-session-id',
@@ -191,13 +204,13 @@ describe('KYC & CAC Verification Journey E2E', () => {
     documentId = res.body.id;
   });
 
-  it('Rider verifies identity document (with face match)', async () => {
+  it('Rider verifies identity document without a duplicate face match', async () => {
     const res = await req('post', '/purse/v1/riders/kyc/verify-document')
       .set('Cookie', riderCookie)
-      .send({ documentId, selfieBase64: 'base64-image-string' })
+      .send({ documentId })
       .expect(201);
 
-    expect(app.get(QoreIDService).verifyNinFace).toHaveBeenCalled();
+    expect(app.get(IdentroService).verifyNin).toHaveBeenCalled();
     expect(res.body.qoreidStatus).toBe('VERIFIED');
     expect(res.body.status).toBe('APPROVED'); // Auto-approved via mock
   });
@@ -240,10 +253,12 @@ describe('KYC & CAC Verification Journey E2E', () => {
   it('Rider mints a liveness session', async () => {
     const res = await req('post', '/purse/v1/riders/kyc/session')
       .set('Cookie', riderCookie)
-      .send({ productCode: 'liveness', reference: 'ref-123' })
+      .send({ consentReference: 'ref-123', idempotencyKey: 'live-test-001' })
       .expect(201);
 
-    expect(app.get(QoreIDService).mintSdkSessionToken).toHaveBeenCalled();
+    expect(app.get(IdentroService).mintSdkSessionToken).toHaveBeenCalledWith(
+      expect.objectContaining({ serviceType: 'FACE_LIVENESS_ONLY' }),
+    );
     expect(res.body.sdkSessionToken).toBe('mock-sdk-token');
   });
 

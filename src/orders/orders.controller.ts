@@ -18,9 +18,10 @@ import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestj
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { CreatedExample, OkExample, StandardErrors } from '../common/api-docs';
-import { UpdateOrderStatusDto } from './dto/order.dto';
+import { CancelOrderDto, ReturnOrderDto, UpdateOrderStatusDto } from './dto/order.dto';
 import { OrdersService } from './orders.service';
 import { OrderStatus } from '@prisma/client';
+import type { AuthenticatedUser } from '../common/types';
 
 @ApiTags('Orders')
 @ApiCookieAuth('purse_access_token')
@@ -34,9 +35,9 @@ export class OrdersController {
   @Post()
   @RequirePermissions('checkout.create', 'payments.initiate')
   @ApiOperation({
-    summary: 'Place store orders and begin card, OPay, or wallet payment',
+    summary: 'Place store orders and begin card, bank-transfer, or wallet payment',
     description:
-      'A cart spanning multiple stores produces multiple orders in one payment group. For card or OPay, open paymentUrl and verify the payment group before showing completion. Wallet payment completes immediately.',
+      'A cart spanning multiple stores produces multiple orders in one payment group. Card returns paymentUrl; bank transfer returns temporary transferInstructions; wallet payment completes immediately. Show completion only after paymentStatus is paid.',
   })
   @CreatedExample({
     paymentGroupId: 20,
@@ -54,6 +55,28 @@ export class OrdersController {
   })
   place(@CurrentUser('id') userId: number, @Body() dto: PlaceOrderDto) {
     return this.checkout.place(userId, dto);
+  }
+
+  @Post(':id/cancel')
+  @RequirePermissions('orders.cancel')
+  @ApiOperation({ summary: 'Customer: cancel an eligible order before dispatch' })
+  cancel(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CancelOrderDto,
+  ) {
+    return this.ordersService.cancel(userId, id, dto.reason);
+  }
+
+  @Post(':id/return')
+  @RequirePermissions('orders.return.request')
+  @ApiOperation({ summary: 'Customer: submit a return request for a delivered order' })
+  requestReturn(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ReturnOrderDto,
+  ) {
+    return this.ordersService.requestReturn(userId, id, dto);
   }
 
   @Post(':id/reorder')
@@ -76,7 +99,7 @@ export class OrdersController {
       'Returns an array. Status may be all, pending, in_progress, ready_for_pickup, delivered, or cancelled.',
   })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
   @ApiQuery({
     name: 'status',
     required: false,
@@ -86,7 +109,7 @@ export class OrdersController {
     {
       id: 501,
       orderId: 501,
-      orderNumber: 'PUR-1720000000-A1B2C3D4',
+      orderNumber: 'PUR-261001-A1B2C3D4',
       currentStatus: 'PREPARING',
       status: 'in_progress',
       paymentStatus: 'paid',
@@ -111,7 +134,7 @@ export class OrdersController {
   @OkExample({
     order: {
       id: 501,
-      orderNumber: 'PUR-1720000000-A1B2C3D4',
+      orderNumber: 'PUR-261001-A1B2C3D4',
       fulfillmentType: 'DELIVERY',
       currentStatus: 'OUT_FOR_DELIVERY',
       placedAt: '2026-09-01T10:00:00.000Z',
@@ -158,7 +181,7 @@ export class OrdersController {
   @ApiParam({ name: 'id', example: 501 })
   @OkExample({
     id: 501,
-    orderNumber: 'PUR-1720000000-A1B2C3D4',
+    orderNumber: 'PUR-261001-A1B2C3D4',
     fulfillmentType: 'DELIVERY',
     currentStatus: 'OUT_FOR_DELIVERY',
     items: [],
@@ -175,15 +198,19 @@ export class OrdersController {
 
   @Patch(':id/status')
   @RequirePermissions('orders.status.update')
-  @ApiOperation({ summary: 'Update an operational order status under the order state machine' })
+  @ApiOperation({
+    summary: 'Vendor/store staff: update order preparation status',
+    description:
+      'Store owners and store members may set PREPARING or READY_FOR_PICKUP only. Payment confirmation is automatic, while pickup and delivery statuses are controlled by the assigned rider workflow.',
+  })
   @ApiParam({ name: 'id', example: 501 })
-  @OkExample({ id: 501, currentStatus: 'CONFIRMED' })
+  @OkExample({ id: 501, currentStatus: 'PREPARING' })
   @StandardErrors()
   status(
-    @CurrentUser('id') actorId: number,
+    @CurrentUser() actor: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.ordersService.setStatus(actorId, id, dto.status as OrderStatus, dto.reason);
+    return this.ordersService.setStatus(actor, id, dto.status as OrderStatus, dto.reason);
   }
 }

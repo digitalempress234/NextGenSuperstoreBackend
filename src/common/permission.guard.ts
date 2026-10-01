@@ -5,6 +5,7 @@ import { REQUIRED_PERMISSIONS } from './permissions.decorator';
 import { REQUIRED_ROLES } from './decorators/roles.decorator';
 import { AuthenticatedUser } from './types';
 import { RbacService } from '../rbac/rbac.service';
+import { IS_ADMIN_ROUTE_KEY } from '../auth/admin-route.decorator';
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -14,6 +15,13 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
+    if (
+      this.reflector.getAllAndOverride<boolean>(IS_ADMIN_ROUTE_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ])
+    )
+      return true;
     const requiredPermissions = this.reflector.getAllAndOverride<string[]>(REQUIRED_PERMISSIONS, [
       context.getHandler(),
       context.getClass(),

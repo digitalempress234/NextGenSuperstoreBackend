@@ -36,7 +36,7 @@ export class AuditService {
     });
   }
 
-  list(limit = 100) {
+  list(limit = 15) {
     return this.prisma.auditLog.findMany({
       take: Math.min(limit, 500),
       include: {

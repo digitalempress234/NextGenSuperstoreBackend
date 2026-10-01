@@ -151,10 +151,10 @@ export class StaffController {
   @Get()
   @ApiOperation({ summary: 'List all staff users (SUPER_ADMIN only)' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 20 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
   @OkExample({
     items: [{ id: 1, email: 'admin@purse.com', role: 'SUPER_ADMIN', status: 'ACTIVE' }],
-    pagination: { page: 1, limit: 20, total: 5, totalPages: 1 },
+    pagination: { page: 1, limit: 15, total: 5, totalPages: 1 },
   })
   @StandardErrors()
   findAll(

@@ -8,6 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "prebuild": "npm run validate:migrations",
     "build": "nest build",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
@@ -25,6 +26,7 @@
     "db:studio": "prisma studio",
     "prisma:validate": "prisma validate",
     "prisma:format": "prisma format",
+    "validate:migrations": "node build-tools/validate-migrations.mjs",
     "check": "npm run prisma:validate && npm run format:check && npm run lint && npm run build && npm test",
     "docker:build": "docker build -t purse-superstore-api:local .",
     "docker:run": "docker compose up -d"
@@ -42,6 +44,7 @@
     "@prisma/adapter-mariadb": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@scalar/nestjs-api-reference": "^1.2.16",
+    "@types/qrcode": "^1.5.6",
     "bcryptjs": "^3.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
@@ -58,6 +61,7 @@
     "nodemailer": "^9.0.5",
     "pino-http": "^10.4.0",
     "pino-pretty": "^13.0.0",
+    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "socket.io": "^4.8.1"

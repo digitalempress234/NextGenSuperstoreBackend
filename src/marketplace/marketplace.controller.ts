@@ -115,7 +115,7 @@ export class MarketplaceController {
     ],
     pagination: {
       page: 1,
-      limit: 10,
+      limit: 15,
       total: 1,
       pages: 1,
     },
@@ -123,6 +123,18 @@ export class MarketplaceController {
   @StandardErrors()
   browse(@Query() query: BrowseMarketplaceDto) {
     return this.marketplace.browse(query);
+  }
+
+  @Public()
+  @Get('products/scan')
+  @ApiOperation({ summary: 'Find an active marketplace product by barcode or store SKU' })
+  @OkExample({
+    matchType: 'manufacturer_barcode',
+    product: { id: 42, name: 'Product' },
+    offers: [],
+  })
+  scan(@Query('code') code: string) {
+    return this.marketplace.scan(code);
   }
 
   @Public()
@@ -173,7 +185,7 @@ export class MarketplaceController {
   @ApiQuery({ name: 'state', required: false, example: 'Lagos' })
   @ApiQuery({ name: 'city', required: false, example: 'Ikeja' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 10 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
   @OkExample({
     items: [
       {
@@ -189,7 +201,7 @@ export class MarketplaceController {
     ],
     pagination: {
       page: 1,
-      limit: 10,
+      limit: 15,
       total: 1,
       pages: 1,
     },

@@ -1,16 +1,22 @@
-import { Body, Controller, Get, ParseIntPipe, Post, Query } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
 import {
   CreateBankAccountDto,
+  CreateGuarantorDocumentDto,
   CreateGuarantorDto,
+  CreateRiderLicenceDto,
   CreateRiderDocumentDto,
+  CreateVehicleDocumentDto,
   CreateVehicleDto,
   MintKycSessionDto,
+  ReplaceVehicleDocumentDto,
   UpdateRiderProfileDto,
+  UpdateVehicleDto,
   VerifyGuarantorDocumentDto,
+  VerifyDriverLicenseDto,
   VerifyRiderDocumentDto,
 } from './dto/rider.dto';
 import { RidersService } from './riders.service';
@@ -28,46 +34,36 @@ export class RidersController {
   ) {}
 
   @Get('onboarding/requirements')
-  @ApiOperation({ summary: 'Get rider onboarding document requirements and field guidance' })
+  @ApiOperation({
+    summary: 'Get progressive rider KYC stages and conditional requirements',
+    description:
+      'APPLICATION is the short submission checklist. OPERATIONAL_APPROVAL gates live deliveries. CONDITIONAL_REVIEW contains risk-based checks.',
+  })
   @OkExample({
-    message: 'Your Account is Under Review',
-    requiredDocuments: [
+    strategy: 'PROGRESSIVE_KYC',
+    stages: [
       {
-        type: 'NIN',
-        description:
-          'National Identification Number slip/card or another approved government-issued ID.',
-      },
-      { type: 'PASSPORT_PHOTO', description: 'Recent passport-style profile photograph.' },
-      {
-        type: 'LIVENESS',
-        description:
-          'Live selfie/liveness verification completed through the supported verification flow.',
-      },
-      {
-        type: 'DRIVERS_LICENSE',
-        description: 'Valid rider/motorcycle or applicable driving licence.',
+        key: 'APPLICATION',
+        label: 'Quick application',
+        requirements: [
+          { key: 'identity', label: 'Government identity number', required: true },
+          { key: 'liveness', label: 'Liveness-only verification', required: true },
+          { key: 'driverLicence', label: 'Automatic driver licence verification', required: true },
+          { key: 'motorcycle', label: 'Motorcycle photo, plate, and registration', required: true },
+        ],
       },
       {
-        type: 'VEHICLE_REGISTRATION',
-        description: 'Current vehicle registration document for the motorcycle/vehicle being used.',
+        key: 'OPERATIONAL_APPROVAL',
+        label: 'Operational verification',
+        requirements: [
+          {
+            key: 'riderLicence',
+            label: 'Driving/rider licence',
+            required: 'MOTORIZED_VEHICLES_ONLY',
+          },
+        ],
       },
-      {
-        type: 'PROOF_OF_OWNERSHIP_OR_PERMISSION',
-        description: 'Proof of ownership or written authorization to use the vehicle.',
-      },
-      { type: 'VEHICLE_LICENSE', description: 'Current vehicle licence.' },
-      { type: 'INSURANCE', description: 'Valid insurance certificate where applicable.' },
-      {
-        type: 'ROADWORTHINESS_CERTIFICATE',
-        description: 'Current roadworthiness certificate where applicable.',
-      },
-      {
-        type: 'VEHICLE_PHOTO',
-        description: 'Clear photographs of the motorcycle/vehicle and plate number.',
-      },
-      { type: 'GUARANTOR_ID', description: 'Government-issued identification for the guarantor.' },
     ],
-    profileMessage: 'Your Account is Under Review',
   })
   @StandardErrors()
   getRequirements() {
@@ -97,15 +93,46 @@ export class RidersController {
   @OkExample({
     id: 50,
     userId: 1001,
+    areaOfOperation: 'Ikeja',
+    emergencyContactName: 'Jane Doe',
+    emergencyContactPhone: '+2348088888888',
     onboardingStatus: 'UNDER_REVIEW',
-    documents: [{ type: 'NIN', status: 'PENDING' }],
-    vehicles: [{ plateNumber: 'LAG-123-XY', status: 'PENDING' }],
-    bankAccounts: [{ bankName: 'GTBank', verificationStatus: 'PENDING' }],
+    documents: [{ type: 'NIN', status: 'APPROVED' }],
+    licences: [{ number: 'AAA00000AA00', providerStatus: 'VERIFIED', status: 'APPROVED' }],
+    liveness: [{ status: 'PENDING' }],
+    vehicles: [
+      {
+        plateNumber: 'LAG-123-XY',
+        status: 'PENDING',
+        documents: [{ type: 'VEHICLE_REGISTRATION', status: 'PENDING' }],
+      },
+    ],
+    bankAccounts: [],
     guarantors: [],
+    canSubmit: false,
+    canAcceptDeliveries: false,
+    missingApplicationRequirements: [],
+    missingOperationalRequirements: ['APPROVED_LIVENESS', 'OPERATIONALLY_APPROVED_VEHICLE'],
   })
   @StandardErrors()
   getMe(@CurrentUser('id') userId: number) {
     return this.ridersService.getProfile(userId);
+  }
+
+  @Get('inbox')
+  @ApiOperation({ summary: 'Logistics/rider: get paginated operational inbox' })
+  inbox(
+    @CurrentUser('id') userId: number,
+    @Query('page', new ParseIntPipe({ optional: true })) page = 1,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit = 15,
+  ) {
+    return this.ridersService.inbox(userId, page, Math.min(limit, 100));
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Logistics/rider: get profile and notification settings' })
+  settings(@CurrentUser('id') userId: number) {
+    return this.ridersService.settings(userId);
   }
 
   @Post('profile')
@@ -132,6 +159,119 @@ export class RidersController {
     return this.ridersService.addVehicle(userId, dto);
   }
 
+  @Patch('vehicles/:vehicleId')
+  @ApiOperation({
+    summary: 'Correct pending or rejected motorcycle details and photo',
+    description:
+      'Available while the application is editable. Any correction returns the motorcycle evidence to PENDING for staff review.',
+  })
+  @ApiParam({ name: 'vehicleId', example: 20 })
+  @StandardErrors()
+  updateVehicle(
+    @CurrentUser('id') userId: number,
+    @Param('vehicleId', ParseIntPipe) vehicleId: number,
+    @Body() dto: UpdateVehicleDto,
+  ) {
+    return this.ridersService.updateVehicle(userId, vehicleId, dto);
+  }
+
+  @Post('licences')
+  @ApiOperation({
+    summary: 'Attach a legacy licence image',
+    description:
+      'Legacy/manual fallback. New mobile integrations should use POST /riders/driver-license/verify.',
+    deprecated: true,
+  })
+  @OkExample({ id: 21, type: 'DRIVERS_LICENSE', status: 'PENDING' })
+  @StandardErrors()
+  addLicence(@CurrentUser('id') userId: number, @Body() dto: CreateRiderLicenceDto) {
+    return this.ridersService.addLicence(userId, dto);
+  }
+
+  @Post('driver-license/verify')
+  @ApiOperation({
+    summary: 'Automatically verify a Nigerian driver licence with Identro',
+    description:
+      'The backend supplies DRIVER_LICENSE_VERIFICATION and provider credentials. Explicit rider consent and an idempotency key are mandatory.',
+  })
+  @OkExample({
+    id: 21,
+    type: 'DRIVERS_LICENSE',
+    number: 'AAA00000AA00',
+    provider: 'identro',
+    providerStatus: 'VERIFIED',
+    status: 'APPROVED',
+  })
+  @StandardErrors()
+  verifyDriverLicense(@CurrentUser('id') userId: number, @Body() dto: VerifyDriverLicenseDto) {
+    return this.ridersService.verifyDriverLicense(userId, dto);
+  }
+
+  @Post('driver-license/requests')
+  @ApiOperation({ summary: 'Create a tracked Identro driver-licence verification request' })
+  @StandardErrors()
+  createDriverLicenseRequest(
+    @CurrentUser('id') userId: number,
+    @Body() dto: VerifyDriverLicenseDto,
+  ) {
+    return this.ridersService.verifyDriverLicense(userId, dto, true);
+  }
+
+  @Get('driver-license/requests')
+  @ApiOperation({ summary: "List the current rider's driver-licence verification history" })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
+  @StandardErrors()
+  listDriverLicenseRequests(
+    @CurrentUser('id') userId: number,
+    @Query('page', new ParseIntPipe({ optional: true })) page = 1,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit = 15,
+  ) {
+    return this.ridersService.listDriverLicenseRequests(userId, page, Math.min(limit, 100));
+  }
+
+  @Get('driver-license/requests/:reference')
+  @ApiOperation({ summary: 'Refresh one owned driver-licence request from Identro' })
+  @ApiParam({ name: 'reference', example: 'DL-IDENTRO-001' })
+  @StandardErrors()
+  syncDriverLicenseRequest(
+    @CurrentUser('id') userId: number,
+    @Param('reference') reference: string,
+  ) {
+    return this.ridersService.syncDriverLicenseRequest(userId, reference);
+  }
+
+  @Post('vehicles/:vehicleId/documents')
+  @ApiOperation({ summary: 'Attach registration or lawful-use evidence to a rider vehicle' })
+  @ApiParam({ name: 'vehicleId', example: 20 })
+  @OkExample({ id: 22, type: 'VEHICLE_REGISTRATION', status: 'PENDING' })
+  @StandardErrors()
+  addVehicleDocument(
+    @CurrentUser('id') userId: number,
+    @Param('vehicleId', ParseIntPipe) vehicleId: number,
+    @Body() dto: CreateVehicleDocumentDto,
+  ) {
+    return this.ridersService.addVehicleDocument(userId, vehicleId, dto);
+  }
+
+  @Patch('vehicles/:vehicleId/documents/:documentId')
+  @ApiOperation({
+    summary: 'Replace a rejected motorcycle registration document',
+    description:
+      'Validates rider ownership, replaces the rejected evidence, clears its review fields, and returns it to PENDING.',
+  })
+  @ApiParam({ name: 'vehicleId', example: 20 })
+  @ApiParam({ name: 'documentId', example: 22 })
+  @StandardErrors()
+  replaceVehicleDocument(
+    @CurrentUser('id') userId: number,
+    @Param('vehicleId', ParseIntPipe) vehicleId: number,
+    @Param('documentId', ParseIntPipe) documentId: number,
+    @Body() dto: ReplaceVehicleDocumentDto,
+  ) {
+    return this.ridersService.replaceVehicleDocument(userId, vehicleId, documentId, dto);
+  }
+
   @Post('bank-accounts')
   @ApiOperation({ summary: 'Add a rider payout bank account' })
   @OkExample({
@@ -153,30 +293,49 @@ export class RidersController {
     return this.ridersService.addGuarantor(userId, dto);
   }
 
+  @Post('guarantors/:guarantorId/documents')
+  @ApiOperation({
+    summary: 'Attach a guarantor ID only when compliance requests a guarantor',
+  })
+  @ApiParam({ name: 'guarantorId', example: 40 })
+  @OkExample({ id: 41, type: 'NIN', status: 'PENDING' })
+  @StandardErrors()
+  addGuarantorDocument(
+    @CurrentUser('id') userId: number,
+    @Param('guarantorId', ParseIntPipe) guarantorId: number,
+    @Body() dto: CreateGuarantorDocumentDto,
+  ) {
+    return this.ridersService.addGuarantorDocument(userId, guarantorId, dto);
+  }
+
   @Post('submit')
-  @ApiOperation({ summary: 'Submit completed rider onboarding for review' })
+  @ApiOperation({
+    summary: 'Submit or resubmit the rider application for compliance review',
+    description:
+      'Requires service area, emergency contact, identity or driver licence, a started liveness-only session, an automatic licence request, motorcycle photo/plate, and registration upload. Rejected riders can correct evidence and resubmit; the previous rejection snapshot is cleared and submissionAttempt increments. UNDER_REVIEW, APPROVED, and SUSPENDED profiles cannot resubmit. A bank account is required only before withdrawal.',
+  })
   @OkExample({
     id: 50,
     onboardingStatus: 'UNDER_REVIEW',
+    submissionAttempt: 2,
     statusMessage: 'Your Account is Under Review',
     canSubmit: false,
+    canAcceptDeliveries: false,
   })
   @StandardErrors()
   submitForReview(@CurrentUser('id') userId: number) {
     return this.ridersService.submitForReview(userId);
   }
 
-  
-
   @Post('kyc/session')
   @ApiOperation({
-    summary: 'Mint an Identro liveness SDK session for biometric verification',
+    summary: 'Mint an Identro liveness-only SDK session',
     description:
-      'Backend-only call to Identro. Returns only the session reference — credentials never reach the client.',
+      'Always uses FACE_LIVENESS_ONLY. There is no separate face-match request and provider credentials never reach the client.',
   })
   @OkExample({
-    reference: '<session reference returned to mobile SDK>',
-    status: 'PENDING',
+    sdkSessionToken: '<session token returned to mobile SDK>',
+    expiresAt: '2026-10-01T12:30:00.000Z',
   })
   @StandardErrors()
   mintKycSession(@CurrentUser('id') userId: number, @Body() dto: MintKycSessionDto) {
@@ -187,14 +346,13 @@ export class RidersController {
   @ApiOperation({
     summary: 'Trigger automated Identro identity verification for a rider document',
     description:
-      'Calls the appropriate Identro endpoint based on document type. Optionally runs a face-match if selfieBase64 is provided.',
+      'Calls the appropriate identity endpoint. Biometric verification is handled separately by the liveness-only flow; selfie images are not accepted here.',
   })
   @OkExample({
     id: 10,
     type: 'NIN',
     status: 'APPROVED',
     qoreidStatus: 'VERIFIED',
-    faceMatchScore: 97.4,
   })
   @StandardErrors()
   verifyRiderDocument(@CurrentUser('id') userId: number, @Body() dto: VerifyRiderDocumentDto) {
@@ -215,8 +373,6 @@ export class RidersController {
     return this.ridersService.verifyGuarantorDocument(userId, dto);
   }
 
-  
-
   @Get('wallet')
   @ApiOperation({ summary: 'Get rider wallet balance (available + held delivery fees)' })
   @OkExample({ balance: 12500, heldBalance: 1000, availableBalance: 12500 })
@@ -228,13 +384,13 @@ export class RidersController {
   @Get('wallet/transactions')
   @ApiOperation({ summary: 'Get rider wallet transaction ledger' })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 10 })
-  @OkExample({ items: [], total: 0, page: 1, limit: 10 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
+  @OkExample({ items: [], total: 0, page: 1, limit: 15 })
   @StandardErrors()
   getTransactions(
     @CurrentUser('id') userId: number,
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit = 10,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit = 15,
   ) {
     return this.riderWallet.getTransactions(userId, page, limit);
   }

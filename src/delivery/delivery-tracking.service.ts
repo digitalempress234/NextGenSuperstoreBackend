@@ -99,7 +99,7 @@ export class DeliveryTrackingService {
     });
   }
 
-  async history(userId: number, deliveryId: number, limit = 100) {
+  async history(userId: number, deliveryId: number, limit = 15) {
     await this.assertCanTrack(userId, deliveryId);
     return this.prisma.deliveryLocation.findMany({
       where: { deliveryId },

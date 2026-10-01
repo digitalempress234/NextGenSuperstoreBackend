@@ -14,7 +14,7 @@ export class CatalogService {
 
   async search(query: ProductSearchDto) {
     const page = Math.max(1, query.page ?? 1);
-    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    const limit = Math.min(100, Math.max(1, query.limit ?? 15));
     const skip = (page - 1) * limit;
 
     const where = {
@@ -136,7 +136,7 @@ export class CatalogService {
       data: {
         name: dto.name,
         brand: dto.brand,
-        barcode: dto.barcode,
+        barcode: dto.barcode?.trim().toUpperCase(),
         description: dto.description,
         unit: dto.unit,
         categoryId: dto.categoryId,
@@ -169,7 +169,7 @@ export class CatalogService {
       data: {
         name: dto.name,
         brand: dto.brand,
-        barcode: dto.barcode,
+        barcode: dto.barcode?.trim().toUpperCase(),
         description: dto.description,
         unit: dto.unit,
         categoryId: dto.categoryId,

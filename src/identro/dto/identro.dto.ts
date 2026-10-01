@@ -44,6 +44,7 @@ export interface IdentroNinData {
 export type IdentroNinResponse = IdentroResponse<IdentroNinData>;
 
 export interface IdentroDriversLicenseRequest {
+  serviceType?: 'DRIVER_LICENSE_VERIFICATION';
   licenseNumber: string;
   firstname?: string;
   lastname?: string;
@@ -58,6 +59,18 @@ export interface IdentroDriversLicenseData {
 }
 
 export type IdentroDriversLicenseResponse = IdentroResponse<IdentroDriversLicenseData>;
+
+export interface IdentroDriverLicenseRequestList {
+  items?: IdentroDriversLicenseData[];
+  requests?: IdentroDriversLicenseData[];
+  total?: number;
+  page?: number;
+  limit?: number;
+  [key: string]: unknown;
+}
+
+export type IdentroDriverLicenseRequestListResponse =
+  IdentroResponse<IdentroDriverLicenseRequestList>;
 
 export interface IdentroVotersCardRequest {
   vin: string;
@@ -173,7 +186,7 @@ export type IdentroCompanyType =
 
 export interface IdentroCacExtracted {
   identroReference: string | null;
-  
+
   identroStatus: string | null;
   identroRaw: Record<string, unknown>;
   companyName: string | null;
@@ -183,7 +196,7 @@ export interface IdentroCacExtracted {
 
 export interface IdentroIdentityExtracted {
   identroReference: string | null;
-  
+
   identroStatus: string | null;
   identroRaw: Record<string, unknown>;
   faceMatchScore?: number;

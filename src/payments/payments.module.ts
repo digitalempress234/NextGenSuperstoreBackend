@@ -7,9 +7,10 @@ import { PaymentsService } from './payments.service';
 import { PaystackClient } from './paystack.client';
 import { WalletController } from './wallet.controller';
 import { PaymentWebhookController } from './payment-webhook.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [SettlementsModule, CartModule],
+  imports: [SettlementsModule, CartModule, NotificationsModule],
   controllers: [PaymentsController, WalletController, PaymentWebhookController],
   providers: [PaymentsService, PaystackClient],
   exports: [PaymentsService],

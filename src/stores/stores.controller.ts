@@ -14,6 +14,7 @@ import {
 import { StoreCacService } from './store-cac.service';
 import { StoreWalletService, StoreWithdrawDto } from './store-wallet.service';
 import { StoresService } from './stores.service';
+import { StoreCampaignDto, StoreOrderQueryDto } from './dto/store-operations.dto';
 
 @ApiTags('Stores')
 @Controller('stores')
@@ -40,6 +41,78 @@ export class StoresController {
   @StandardErrors()
   list() {
     return this.storesService.list();
+  }
+
+  @Get(':id/orders')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('orders.view')
+  @ApiOperation({ summary: 'Vendor/store agent: list store orders' })
+  orders(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Query() query: StoreOrderQueryDto) {
+    return this.storesService.orders(userId, storeId, query);
+  }
+
+  @Get(':id/orders/:orderId')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('orders.view')
+  @ApiOperation({ summary: 'Vendor/store agent: get a store order detail' })
+  order(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Param('orderId', ParseIntPipe) orderId: number) {
+    return this.storesService.order(userId, storeId, orderId);
+  }
+
+  @Get(':id/campaigns')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.view')
+  @ApiOperation({ summary: 'Vendor: list store reward campaigns' })
+  campaigns(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
+    return this.storesService.campaigns(userId, storeId);
+  }
+
+  @Post(':id/campaigns')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.update')
+  @ApiOperation({ summary: 'Vendor: create a store reward campaign' })
+  createCampaign(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Body() dto: StoreCampaignDto) {
+    return this.storesService.createCampaign(userId, storeId, dto);
+  }
+
+  @Patch(':id/campaigns/:campaignId')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.update')
+  @ApiOperation({ summary: 'Vendor: update a store reward campaign' })
+  updateCampaign(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Param('campaignId') campaignId: string, @Body() dto: StoreCampaignDto) {
+    return this.storesService.updateCampaign(userId, storeId, campaignId, dto);
+  }
+
+  @Get(':id/inbox')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('chats.use')
+  @ApiOperation({ summary: 'Vendor/store agent: list the store inbox' })
+  inbox(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
+    return this.storesService.inbox(userId, storeId);
+  }
+
+  @Get(':id/riders')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('orders.view')
+  @ApiOperation({ summary: 'Vendor: list riders serving this store' })
+  riders(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
+    return this.storesService.riders(userId, storeId);
+  }
+
+  @Get(':id/compare-deals')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.view')
+  @ApiOperation({ summary: 'Vendor: compare store offers with competing active offers' })
+  compareDeals(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
+    return this.storesService.compareDeals(userId, storeId);
+  }
+
+  @Get(':id/settings')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.view')
+  @ApiOperation({ summary: 'Vendor/store agent: get store settings' })
+  settings(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
+    return this.storesService.settings(userId, storeId);
   }
 
   @Get('mine')
@@ -182,14 +255,14 @@ export class StoresController {
   @ApiOperation({ summary: 'Get paginated store wallet transaction ledger' })
   @ApiParam({ name: 'id', example: 10 })
   @ApiQuery({ name: 'page', required: false, example: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 10 })
-  @OkExample({ items: [], total: 0, page: 1, limit: 10 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
+  @OkExample({ items: [], total: 0, page: 1, limit: 15 })
   @StandardErrors()
   getTransactions(
     @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) storeId: number,
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit = 10,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit = 15,
   ) {
     return this.storeWallet.getTransactions(userId, storeId, page, limit);
   }

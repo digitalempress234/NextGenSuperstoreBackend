@@ -4,25 +4,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, Prisma } from '@prisma/client';
+import { ReturnOrderDto } from './dto/order.dto';
 import { CartService } from '../cart/cart.service';
 import { ConflictException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-
-const transitions: Record<OrderStatus, OrderStatus[]> = {
-  ORDER_RECEIVED: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PREPARING', 'CANCELLED'],
-  PREPARING: ['READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'CANCELLED'],
-  READY_FOR_PICKUP: ['PICKED_UP', 'RIDER_ASSIGNED', 'CANCELLED'],
-  RIDER_ASSIGNED: ['OUT_FOR_DELIVERY', 'CANCELLED'],
-  OUT_FOR_DELIVERY: ['PICKED_UP', 'DELIVERED', 'CANCELLED'],
-  PICKED_UP: ['DELIVERED', 'COMPLETED'],
-  DELIVERED: ['COMPLETED'],
-  COMPLETED: [],
-  CANCELLED: [],
-};
+import type { AuthenticatedUser } from '../common/types';
+import { canTransitionOrder, STORE_MANAGED_ORDER_STATUSES } from './order-status';
 
 function screenStatus(status: OrderStatus) {
   if (status === 'ORDER_RECEIVED' || status === 'CONFIRMED') return 'pending';
@@ -43,7 +33,7 @@ export class OrdersService {
   mine(
     userId: number,
     page = 1,
-    limit = 20,
+    limit = 15,
     status?: 'all' | 'pending' | 'in_progress' | 'ready_for_pickup' | 'delivered' | 'cancelled',
   ) {
     const statuses: Record<Exclude<NonNullable<typeof status>, 'all'>, OrderStatus[]> = {
@@ -311,11 +301,30 @@ export class OrdersService {
     };
   }
 
-  async setStatus(actorId: number, id: number, status: OrderStatus, reason?: string) {
-    const order = await this.prisma.order.findUnique({ where: { id } });
+  async setStatus(actor: AuthenticatedUser, id: number, status: OrderStatus, reason?: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        store: {
+          select: {
+            ownerUserId: true,
+            members: { where: { userId: actor.id }, select: { userId: true } },
+          },
+        },
+      },
+    });
 
     if (!order) {
       throw new NotFoundException('Order not found.');
+    }
+
+    const isStoreOperator =
+      order.store.ownerUserId === actor.id ||
+      order.store.members.some((member) => member.userId === actor.id);
+    if (!isStoreOperator) {
+      throw new ForbiddenException(
+        "Only this order's store owner or store staff can update preparation status.",
+      );
     }
 
     if (order.currentStatus === 'ORDER_RECEIVED') {
@@ -324,7 +333,13 @@ export class OrdersService {
       );
     }
 
-    if (!transitions[order.currentStatus].includes(status)) {
+    if (!STORE_MANAGED_ORDER_STATUSES.includes(status)) {
+      throw new ForbiddenException(
+        'Store operators may only mark an order as PREPARING or READY_FOR_PICKUP.',
+      );
+    }
+
+    if (!canTransitionOrder(order.currentStatus, status)) {
       throw new BadRequestException(
         `Invalid order transition: ${order.currentStatus} -> ${status}`,
       );
@@ -341,7 +356,7 @@ export class OrdersService {
           orderId: id,
           fromStatus: order.currentStatus,
           toStatus: status,
-          changedById: actorId,
+          changedById: actor.id,
           reason,
         },
       });
@@ -369,5 +384,113 @@ export class OrdersService {
     });
 
     return updatedOrder;
+  }
+
+  async cancel(userId: number, id: number, reason: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM \`Order\` WHERE id = ${id} FOR UPDATE`;
+      const order = await tx.order.findFirst({
+        where: { id, userId },
+        include: { items: true, allocations: { include: { paymentGroup: true } } },
+      });
+      if (!order) throw new NotFoundException('Order not found.');
+      if (!['CONFIRMED', 'PREPARING'].includes(order.currentStatus))
+        throw new BadRequestException('This order can no longer be cancelled.');
+      for (const item of order.items)
+        await tx.storeProduct.update({
+          where: { id: item.storeProductId },
+          data: { stockQuantity: { increment: item.quantity } },
+        });
+      await tx.order.update({ where: { id }, data: { currentStatus: 'CANCELLED' } });
+      await tx.delivery.updateMany({ where: { orderId: id }, data: { status: 'CANCELLED' } });
+      await tx.pickup.updateMany({ where: { orderId: id }, data: { status: 'cancelled' } });
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: id,
+          fromStatus: order.currentStatus,
+          toStatus: 'CANCELLED',
+          changedById: userId,
+          reason,
+        },
+      });
+      const allocation = order.allocations[0];
+      let refundStatus = 'manual_pending';
+      if (allocation?.paymentGroup.paymentMethod === 'WALLET') {
+        const wallet = await tx.wallet.upsert({
+          where: { userId },
+          create: { userId, balance: order.total },
+          update: { balance: { increment: order.total } },
+        });
+        await tx.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            amount: order.total,
+            type: 'CREDIT',
+            reference: `ORDER-CANCEL-${id}`,
+            description: `Refund for ${order.orderNumber}`,
+          },
+        });
+        refundStatus = 'refunded';
+      }
+      const storeWallet = await tx.storeWallet.findUnique({ where: { storeId: order.storeId } });
+      const settlement = await tx.storeWalletTransaction.findUnique({
+        where: { reference: `ORDER-${order.orderNumber}` },
+      });
+      if (storeWallet && settlement) {
+        await tx.storeWallet.update({
+          where: { id: storeWallet.id },
+          data: { balance: { decrement: settlement.amount } },
+        });
+        await tx.storeWalletTransaction.create({
+          data: {
+            walletId: storeWallet.id,
+            amount: settlement.amount,
+            type: 'DEBIT',
+            reference: `ORDER-CANCEL-${order.orderNumber}`,
+            orderId: id,
+            description: 'Settlement reversal after customer cancellation',
+          },
+        });
+      }
+      await tx.cashbackReward.updateMany({
+        where: { orderId: id, status: 'AVAILABLE' },
+        data: { status: 'REVERSED' },
+      });
+      return { orderId: id, status: 'cancelled', refundStatus };
+    });
+  }
+
+  async requestReturn(userId: number, id: number, dto: ReturnOrderDto) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, userId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Order not found.');
+    if (!['DELIVERED', 'COMPLETED'].includes(order.currentStatus))
+      throw new BadRequestException('Only delivered orders can be returned.');
+    if (Date.now() - order.updatedAt.getTime() > 14 * 24 * 60 * 60 * 1000)
+      throw new BadRequestException('The 14-day return window has expired.');
+    const active = await this.prisma.orderReturn.findFirst({
+      where: { orderId: id, status: { in: ['PENDING', 'APPROVED'] } },
+    });
+    if (active)
+      throw new ConflictException('An active return request already exists for this order.');
+    if (
+      dto.items?.some((requested) => {
+        const item = order.items.find((value) => value.id === requested.orderItemId);
+        return !item || requested.quantity < 1 || requested.quantity > item.quantity;
+      })
+    )
+      throw new BadRequestException('Return items or quantities are invalid.');
+    return this.prisma.orderReturn.create({
+      data: {
+        orderId: id,
+        userId,
+        reason: dto.reason,
+        details: dto.details,
+        items: dto.items as Prisma.InputJsonValue | undefined,
+        evidenceUrls: dto.evidenceUrls as Prisma.InputJsonValue | undefined,
+      },
+    });
   }
 }

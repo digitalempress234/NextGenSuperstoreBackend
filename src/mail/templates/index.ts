@@ -13,6 +13,7 @@ import { vendorApprovalEmail } from './vendor-approval.template';
 import { lowStockEmail } from './low-stock.template';
 import { staffWelcomeEmail } from './staff-welcome.template';
 import { welcomeEmail } from './welcome.template';
+import { riderApplicationDecisionEmail } from './rider-application-decision.template';
 
 export type { EmailTemplateData, RenderedEmail } from './_shared';
 
@@ -32,6 +33,7 @@ export const templates = {
   staffWelcome: staffWelcomeEmail,
   systemAnnouncement: systemAnnouncementEmail,
   welcome: welcomeEmail,
+  riderApplicationDecision: riderApplicationDecisionEmail,
 } as const;
 
 export type EmailTemplateKey = keyof typeof templates;

@@ -55,3 +55,7 @@ export class ReviewBnplDto {
     'APPROVED' | 'REJECTED';
   @ApiProperty() @IsString() @IsNotEmpty() @MaxLength(191) reason!: string;
 }
+export class PayBnplRepaymentDto {
+  @ApiProperty() @Type(() => Number) @IsInt() @IsPositive() installmentId!: number;
+  @ApiProperty({ enum: ['wallet', 'card'] }) @IsIn(['wallet', 'card']) method!: 'wallet' | 'card';
+}

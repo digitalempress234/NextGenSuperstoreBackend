@@ -20,6 +20,19 @@ export class PaystackClient {
     };
   }
 
+  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const response = await fetch(`https://api.paystack.co${path}`, {
+      ...options,
+      signal: AbortSignal.timeout(15000),
+      headers: { ...this.headers(), ...(options.headers ?? {}) },
+    });
+    const body = (await response.json()) as PaystackResponse<T>;
+    if (!response.ok || !body.status) {
+      throw new InternalServerErrorException(body.message || 'Paystack request failed.');
+    }
+    return body.data;
+  }
+
   async initialize(
     reference: string,
     email: string,
@@ -56,17 +69,103 @@ export class PaystackClient {
     return body.data;
   }
 
-  async verify(reference: string) {
+  createBankTransferCharge(
+    reference: string,
+    email: string,
+    amount: Prisma.Decimal.Value,
+    accountExpiresAt: Date,
+    metadata?: Record<string, unknown>,
+  ) {
+    return this.request<{
+      reference: string;
+      status: string;
+      display_text?: string;
+      account_name: string;
+      account_number: string;
+      bank: { name: string; slug: string; id: number };
+      account_expires_at: string;
+    }>('/charge', {
+      method: 'POST',
+      body: JSON.stringify({
+        reference,
+        email,
+        amount: kobo(amount),
+        currency: 'NGN',
+        bank_transfer: { account_expires_at: accountExpiresAt.toISOString() },
+        metadata,
+      }),
+    });
+  }
+
+  createCustomer(input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+    userId: number;
+  }) {
+    return this.request<{ id: number; customer_code: string }>('/customer', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: input.email,
+        first_name: input.firstName,
+        last_name: input.lastName,
+        phone: input.phone,
+        metadata: { userId: input.userId },
+      }),
+    });
+  }
+
+  async findCustomer(emailOrCode: string) {
     const response = await fetch(
-      `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+      `https://api.paystack.co/customer/${encodeURIComponent(emailOrCode)}`,
       { headers: this.headers(), signal: AbortSignal.timeout(15000) },
     );
-    const body = (await response.json()) as PaystackResponse<Record<string, unknown>>;
-
+    if (response.status === 404) return null;
+    const body = (await response.json()) as PaystackResponse<{
+      id: number;
+      customer_code: string;
+    }>;
     if (!response.ok || !body.status) {
-      throw new InternalServerErrorException(body.message || 'Paystack verification failed.');
+      throw new InternalServerErrorException(body.message || 'Could not fetch Paystack customer.');
     }
-
     return body.data;
+  }
+
+  async assignDedicatedAccount(input: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+    preferredBank?: string;
+  }) {
+    return (
+      (await this.request<Record<string, unknown> | undefined>('/dedicated_account/assign', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: input.email,
+          first_name: input.firstName,
+          last_name: input.lastName,
+          phone: input.phone,
+          preferred_bank: input.preferredBank,
+          country: 'NG',
+        }),
+      })) ?? {}
+    );
+  }
+
+  requeryDedicatedAccount(accountNumber: string, providerSlug: string, date?: string) {
+    const params = new URLSearchParams({
+      account_number: accountNumber,
+      provider_slug: providerSlug,
+    });
+    if (date) params.set('date', date);
+    return this.request<Record<string, unknown>>(`/dedicated_account/requery?${params.toString()}`);
+  }
+
+  async verify(reference: string) {
+    return this.request<Record<string, unknown>>(
+      `/transaction/verify/${encodeURIComponent(reference)}`,
+    );
   }
 }

@@ -18,7 +18,9 @@ export class PaymentWebhookController {
   @SkipCsrf()
   @Post('payment')
   @ApiOperation({
-    summary: 'Receive a signed Paystack webhook and verify charge success with Paystack',
+    summary: 'Receive signed Paystack charge and dedicated-account webhooks',
+    description:
+      'Verifies checkout/card/transfer payments, credits mapped wallet virtual accounts, and records asynchronous dedicated-account assignment results idempotently.',
   })
   @ApiHeader({
     name: 'x-paystack-signature',

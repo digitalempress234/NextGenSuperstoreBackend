@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PaymentMethod, Prisma } from '@prisma/client';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomInt, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CartService, cartInclude } from '../cart/cart.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -31,6 +31,21 @@ export function quoteFingerprint(value: unknown): string {
   return createHash('sha256')
     .update(JSON.stringify(canonical(JSON.parse(JSON.stringify(value)))))
     .digest('hex');
+}
+
+const ORDER_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+export function createOrderNumber(now = new Date()): string {
+  const date = [
+    String(now.getUTCFullYear()).slice(-2),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('');
+  let suffix = '';
+  for (let index = 0; index < 8; index++) {
+    suffix += ORDER_CODE_ALPHABET[randomInt(ORDER_CODE_ALPHABET.length)];
+  }
+  return `PUR-${date}-${suffix}`;
 }
 
 @Injectable()
@@ -116,8 +131,6 @@ export class CheckoutService {
     const settings = await this.settings.settings(tx);
     if (fulfillmentType === 'DELIVERY' && !settings.deliveryEnabled)
       throw new BadRequestException('Home delivery is not configured or is disabled.');
-    if (input.paymentMethod === 'opay' && !settings.opayEnabled)
-      throw new BadRequestException('OPay is not enabled.');
     const unavailableItems = cart.items
       .filter(
         (item) =>
@@ -157,7 +170,7 @@ export class CheckoutService {
     const storeIds = [...new Set(items.map((item) => item.storeId))].sort((a, b) => a - b);
     const perStoreFee =
       fulfillmentType === 'DELIVERY' ? money(settings.deliveryFeePerStore) : money(0);
-    const orders = storeIds.map((storeId) => {
+    let orders = storeIds.map((storeId) => {
       const lines = items.filter((item) => item.storeId === storeId);
       const subtotal = lines.reduce((sum, line) => sum.add(line.totalPrice), money(0));
       return {
@@ -166,10 +179,78 @@ export class CheckoutService {
         subtotal,
         shippingFee: perStoreFee,
         tax: money(0),
+        discountAmount: money(0),
+        shippingDiscount: money(0),
         total: subtotal.add(perStoreFee),
       };
     });
-    const subtotal = orders.reduce((sum, order) => sum.add(order.subtotal), money(0));
+    const grossSubtotal = orders.reduce((sum, order) => sum.add(order.subtotal), money(0));
+    let discountAmount = money(0);
+    const appliedVoucher = cart.voucher?.voucher;
+    if (appliedVoucher) {
+      const valid =
+        appliedVoucher.isActive &&
+        appliedVoucher.startsAt <= new Date() &&
+        (!appliedVoucher.expiresAt || appliedVoucher.expiresAt > new Date()) &&
+        grossSubtotal.gte(appliedVoucher.minimumOrderAmount);
+      if (!valid) throw new ConflictException('Applied voucher is no longer eligible.');
+      orders = orders.map((order) => {
+        if (appliedVoucher.storeId && appliedVoucher.storeId !== order.storeId) return order;
+        if (appliedVoucher.type === 'FREE_SHIPPING')
+          return { ...order, shippingDiscount: order.shippingFee, total: order.subtotal };
+        const raw = appliedVoucher.discountPercent
+          ? order.subtotal.mul(appliedVoucher.discountPercent).div(100)
+          : money(appliedVoucher.discountAmount ?? 0);
+        const amount = money(Prisma.Decimal.min(raw, order.subtotal));
+        return { ...order, discountAmount: amount, total: order.total.sub(amount) };
+      });
+    }
+    const appliedCoupon = cart.coupon?.coupon;
+    if (appliedCoupon) {
+      const valid =
+        appliedCoupon.isActive &&
+        appliedCoupon.startsAt <= new Date() &&
+        (!appliedCoupon.expiresAt || appliedCoupon.expiresAt > new Date()) &&
+        grossSubtotal.gte(appliedCoupon.minimumOrderAmount) &&
+        (appliedCoupon.usageLimit === null || appliedCoupon.usedCount < appliedCoupon.usageLimit);
+      if (!valid) throw new ConflictException('Applied coupon is no longer eligible.');
+      let couponTotal =
+        appliedCoupon.type === 'PERCENTAGE' && appliedCoupon.discountPercent
+          ? grossSubtotal.mul(appliedCoupon.discountPercent).div(100)
+          : money(appliedCoupon.discountAmount ?? 0);
+      if (appliedCoupon.maximumDiscount)
+        couponTotal = Prisma.Decimal.min(couponTotal, appliedCoupon.maximumDiscount);
+      couponTotal = money(
+        Prisma.Decimal.min(
+          couponTotal,
+          orders.reduce((sum, order) => sum.add(order.total), money(0)),
+        ),
+      );
+      let remaining = couponTotal;
+      orders = orders.map((order, index) => {
+        const proportional = grossSubtotal.isZero()
+          ? money(0)
+          : couponTotal.mul(order.subtotal).div(grossSubtotal);
+        const amount = money(
+          Prisma.Decimal.min(
+            remaining,
+            order.total,
+            index === orders.length - 1 ? remaining : proportional,
+          ),
+        );
+        remaining = remaining.sub(amount);
+        return {
+          ...order,
+          discountAmount: order.discountAmount.add(amount),
+          total: order.total.sub(amount),
+        };
+      });
+    }
+    discountAmount = orders.reduce(
+      (sum, order) => sum.add(order.discountAmount).add(order.shippingDiscount),
+      money(0),
+    );
+    const subtotal = grossSubtotal;
     const shippingFee = perStoreFee.mul(storeIds.length);
     return {
       cartId: cart.id,
@@ -180,7 +261,8 @@ export class CheckoutService {
       subtotal,
       shippingFee,
       tax: money(0),
-      total: subtotal.add(shippingFee),
+      discountAmount,
+      total: subtotal.add(shippingFee).sub(discountAmount),
       orders,
       paymentMethod: input.paymentMethod ?? 'card',
     };
@@ -191,6 +273,7 @@ export class CheckoutService {
       (tx) => this.createInTransaction(tx, userId, input),
       { timeout: 15000 },
     );
+    if (group.status === 'PAID') await this.payments.dispatchGroupConfirmations([group.id]);
     return this.payments.summary(userId, group.id);
   }
 
@@ -199,8 +282,9 @@ export class CheckoutService {
       (tx) => this.createInTransaction(tx, userId, input),
       { timeout: 15000 },
     );
-    if (group.paymentMethod === 'CARD' || group.paymentMethod === 'OPAY')
+    if (group.paymentMethod === 'CARD' || group.paymentMethod === 'BANK_TRANSFER')
       await this.payments.initialize(userId, group.id);
+    if (group.status === 'PAID') await this.payments.dispatchGroupConfirmations([group.id]);
     return this.payments.summary(userId, group.id);
   }
 
@@ -237,8 +321,8 @@ export class CheckoutService {
       credit?.method ??
       (input.paymentMethod === 'wallet'
         ? 'WALLET'
-        : input.paymentMethod === 'opay'
-          ? 'OPAY'
+        : input.paymentMethod === 'bank_transfer'
+          ? 'BANK_TRANSFER'
           : 'CARD');
     const orders = [];
     for (const order of quote.orders) {
@@ -264,7 +348,7 @@ export class CheckoutService {
       const address = quote.deliveryAddress;
       const created = await tx.order.create({
         data: {
-          orderNumber: 'PUR-' + randomUUID().toUpperCase(),
+          orderNumber: createOrderNumber(),
           userId,
           storeId: order.storeId,
           fulfillmentType: quote.fulfillmentType,
@@ -281,6 +365,8 @@ export class CheckoutService {
           currency: quote.currency,
           subtotal: order.subtotal,
           shippingFee: order.shippingFee,
+          discountAmount: order.discountAmount,
+          shippingDiscount: order.shippingDiscount,
           total: order.total,
           items: {
             create: order.items.map((item) => ({
@@ -328,6 +414,7 @@ export class CheckoutService {
         checkoutSnapshot: jsonSnapshot({ input, quote }),
         paymentMethod: method,
         totalAmount: quote.total,
+        discountAmount: quote.discountAmount,
         currency: quote.currency,
         allocations: {
           create: orders.map((order) => ({ orderId: order.id, amount: order.total })),

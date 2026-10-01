@@ -161,7 +161,7 @@ merchant/vendor login
     -> add StoreProduct offer
     -> set price and stock
     -> receive order
-    -> update order status
+    -> set PREPARING / READY_FOR_PICKUP only
     -> prepare pickup / delivery
 ```
 
@@ -182,9 +182,12 @@ register/login
     -> delivery offers
     -> accept
     -> pickup
-    -> status updates
+    -> pickup / transit status updates
+    -> verify customer QR
     -> delivered
 ```
+
+Payment confirmation is system-owned. Rider acceptance and delivery progress are synchronized to the order timeline. Staff status intervention is available only through the audited admin endpoint and requires a reason.
 
 ## Running locally
 
@@ -237,13 +240,12 @@ Also verify, against real infrastructure:
 - CORS and HTTPS reverse proxy.
 - Secrets and backup/restore procedure.
 
-
 ## Authentication storage policy
 
 This backend uses secure HttpOnly cookies only. JWT access/refresh tokens are never returned in API JSON and must never be stored in localStorage, sessionStorage, IndexedDB, or readable cookies. Production cookies require HTTPS. The frontend must use `credentials: include` or Axios `withCredentials: true`.
 
-
 ## Browser authentication policy
+
 The API is intentionally cookie-only. Login/register/refresh set Secure, HttpOnly cookies. Tokens are never returned to frontend JavaScript and must never be placed in localStorage, sessionStorage, IndexedDB, or readable cookies. Use `credentials: include`/`withCredentials: true`.
 
 Production requires `AUTH_COOKIE_SECURE=true` and HTTPS.
@@ -252,7 +254,7 @@ Production requires `AUTH_COOKIE_SECURE=true` and HTTPS.
 
 Authentication is cookie-only. No bearer tokens are exposed to frontend JavaScript and no authentication token may be stored in localStorage, sessionStorage, or IndexedDB.
 
-OTP is implemented only for email verification and password recovery. Login does not require OTP. OTPs are hashed, expire, have attempt limits, resend replaces the previous OTP, and successful verification deletes the OTP record. 
+OTP is implemented only for email verification and password recovery. Login does not require OTP. OTPs are hashed, expire, have attempt limits, resend replaces the previous OTP, and successful verification deletes the OTP record.
 
 ### Authentication endpoints
 
@@ -276,20 +278,14 @@ The backend includes fixes for the legacy signup/rider issues and Google sign-in
 
 Google requires a Google Web Client ID in `GOOGLE_CLIENT_ID`. The frontend uses Google Identity Services to obtain an ID token and posts it to `POST /purse/v1/auth/google`; the API verifies the token and then issues only Secure/HttpOnly Purse cookies.
 
-
 ## CircleCI Docker deployment
 
 The repository includes `.circleci/config.yml` and `docker-compose.production.yml`. Pushes to `main` run validation, build an immutable Docker image tagged with the commit SHA, push it to the configured registry, SSH to the production host, apply Prisma migrations, deploy the image, and verify `/purse/health`.
-
 
 ## CircleCI deployment
 
 CircleCI is configured in `.circleci/config.yml` to test the application, build an immutable Docker image tagged with the Git commit SHA, push it to the configured registry, then SSH into the production server and deploy it using `docker-compose.production.yml` and `ops/deploy-production.sh`.
 
-
-
 ## Delivery verification
-A delivery requires a customer-provided six-digit delivery code. The code is sent in-app and by email, stored only as a hash, expires, is attempt-limited, and is deleted after successful verification.
 
-## Structured logging
-The API uses request IDs, structured logs, error logging, Prisma error/query logging controls, and sensitive-field redaction
+A delivery requires a customer-provided six-digit delivery code. The code is sent in-app and by email, stored only as a hash, expires, is attempt-limited, and is deleted after successful verification.

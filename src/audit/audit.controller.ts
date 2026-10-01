@@ -14,7 +14,7 @@ export class AuditController {
   @Get('logs')
   @RequirePermissions('audit.view')
   @ApiOperation({ summary: 'List append-only privileged action audit records' })
-  @ApiQuery({ name: 'limit', required: false, example: 100 })
+  @ApiQuery({ name: 'limit', required: false, example: 15 })
   @OkExample([
     {
       id: 1,
@@ -27,7 +27,7 @@ export class AuditController {
     },
   ])
   @StandardErrors()
-  list(@Query('limit') limit = '100') {
+  list(@Query('limit') limit = '15') {
     return this.audit.list(Number(limit));
   }
 }

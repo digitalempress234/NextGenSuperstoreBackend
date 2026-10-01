@@ -67,6 +67,12 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(input.password, 12);
+    const referrer = input.referralCode
+      ? await this.prisma.referralProfile.findUnique({
+          where: { code: input.referralCode.trim().toUpperCase() },
+        })
+      : null;
+    if (input.referralCode && !referrer) throw new BadRequestException('Referral code is invalid.');
     const user = await this.prisma.user.create({
       data: {
         email,
@@ -83,6 +89,12 @@ export class AuthService {
           : undefined,
       },
     });
+
+    if (referrer && referrer.userId !== user.id) {
+      await this.prisma.referral.create({
+        data: { referrerId: referrer.userId, referredUserId: user.id },
+      });
+    }
 
     await this.createAndSendOtp(user.id, email, 'EMAIL_VERIFICATION', user.firstName ?? undefined);
 
@@ -133,15 +145,11 @@ export class AuthService {
       data: { isEmailVerified: true },
     });
 
-    
-    this.mail.sendTemplate(
-      'welcome',
-      user.email,
-      { firstName: user.firstName ?? undefined },
-      user.id,
-    ).catch(err => {
-      this.logger.error(`Failed to send welcome email to ${user.email}`, err);
-    });
+    this.mail
+      .sendTemplate('welcome', user.email, { firstName: user.firstName ?? undefined }, user.id)
+      .catch((err) => {
+        this.logger.error(`Failed to send welcome email to ${user.email}`, err);
+      });
 
     return { verified: true };
   }
@@ -153,7 +161,6 @@ export class AuthService {
       select: { id: true, email: true, firstName: true, isEmailVerified: true },
     });
 
-    
     if (!user || user.isEmailVerified) {
       return { accepted: true };
     }
@@ -186,7 +193,10 @@ export class AuthService {
       try {
         await this.createAndSendOtp(user.id, email, 'PASSWORD_RESET', user.firstName ?? undefined);
       } catch (err) {
-        this.logger.error('Failed to send OTP for forgot password', err instanceof Error ? err.stack : String(err));
+        this.logger.error(
+          'Failed to send OTP for forgot password',
+          err instanceof Error ? err.stack : String(err),
+        );
       }
     }
 
@@ -346,7 +356,6 @@ export class AuthService {
       );
     }
 
-    
     await this.prisma.otpChallenge.deleteMany({
       where: {
         userId,

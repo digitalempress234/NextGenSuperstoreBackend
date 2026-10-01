@@ -9,8 +9,9 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBody, ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsNumber, Max, Min } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsIn, IsNumber, IsString, Max, MaxLength, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Equals, IsOptional } from 'class-validator';
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { OkExample, RequireAuth, StandardErrors } from '../common/api-docs';
@@ -29,6 +30,35 @@ export class TopupWalletDto {
   @Min(100)
   @Max(1000000)
   amount!: number;
+}
+
+export class WithdrawWalletDto {
+  @ApiProperty({ minimum: 100, example: 5000 })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(100)
+  amount!: number;
+
+  @ApiProperty({ example: 'GTBank' }) @IsString() @MaxLength(100) bankName!: string;
+  @ApiProperty({ example: '0123456789' }) @IsString() @MaxLength(20) accountNumber!: string;
+  @ApiProperty({ example: 'Ada Okafor' }) @IsString() @MaxLength(191) accountName!: string;
+  @ApiProperty({ enum: ['MANUAL'], default: 'MANUAL' })
+  @IsIn(['MANUAL'])
+  mode = 'MANUAL' as const;
+}
+
+export class CreateWalletTransferAccountDto {
+  @ApiProperty({
+    example: true,
+    description: 'Explicit consent to share identity details with Paystack for account assignment.',
+  })
+  @Equals(true)
+  consent!: true;
+
+  @ApiPropertyOptional({ example: 'titan-paystack' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  preferredBank?: string;
 }
 
 /**
@@ -87,6 +117,72 @@ export class WalletController {
     return this.payments.topupWallet(userId, money(dto.amount));
   }
 
+  @Post('topup/transfer')
+  @RequirePermissions('payments.initiate')
+  @RequireAuth(['payments.initiate'], ['CUSTOMER', 'VENDOR'])
+  @ApiOperation({
+    summary: 'Fund wallet through a temporary Paystack bank-transfer account',
+    description:
+      'Creates an exact-amount temporary account. No BVN or personal bank-account details are collected. Credit occurs only after Paystack verification.',
+  })
+  @ApiBody({ type: TopupWalletDto })
+  @OkExample({
+    id: 56,
+    transactionRef: 'TOPUP-TRANSFER-1001-550e8400-e29b-41d4-a716-446655440000',
+    amount: '5000.00',
+    currency: 'NGN',
+    status: 'PENDING',
+    transferInstructions: {
+      bankName: 'Paystack-Titan',
+      accountName: 'SUPERSTORE',
+      accountNumber: '1260257501',
+      amount: '5000.00',
+      currency: 'NGN',
+      expiresAt: '2026-10-01T18:30:00.000Z',
+    },
+  })
+  @StandardErrors()
+  topupByTransfer(@CurrentUser('id') userId: number, @Body() dto: TopupWalletDto) {
+    return this.payments.topupWalletByTransfer(userId, money(dto.amount));
+  }
+
+  @Post('transfer-account')
+  @RequirePermissions('payments.initiate')
+  @RequireAuth(['payments.initiate'], ['CUSTOMER', 'VENDOR'])
+  @ApiOperation({
+    summary: 'Create or resume a permanent Paystack transfer account for wallet funding',
+    description:
+      'Requires explicit consent and uses the customer name, email, and phone already on the profile. The API does not collect BVN or personal bank-account details. Account assignment may complete asynchronously through a signed webhook.',
+  })
+  @OkExample({
+    status: 'active',
+    bankName: 'Paystack-Titan',
+    accountName: 'Superstore / Ada Okafor',
+    accountNumber: '9930000737',
+    currency: 'NGN',
+  })
+  @StandardErrors()
+  transferAccount(@CurrentUser('id') userId: number, @Body() dto: CreateWalletTransferAccountDto) {
+    return this.payments.createWalletTransferAccount(userId, dto);
+  }
+
+  @Get('transfer-account')
+  @RequireAuth([], ['CUSTOMER', 'VENDOR'])
+  @ApiOperation({ summary: 'Get the current user wallet-funding transfer account' })
+  @StandardErrors()
+  getTransferAccount(@CurrentUser('id') userId: number) {
+    return this.payments.walletTransferAccount(userId);
+  }
+
+  @Post('transfer-account/requery')
+  @RequirePermissions('payments.initiate')
+  @RequireAuth(['payments.initiate'], ['CUSTOMER', 'VENDOR'])
+  @ApiOperation({ summary: 'Ask Paystack to requery delayed transfers to the wallet account' })
+  @StandardErrors()
+  requeryTransferAccount(@CurrentUser('id') userId: number) {
+    return this.payments.requeryWalletTransferAccount(userId);
+  }
+
   // ─── POST /wallet/topup/:reference/verify ─────────────────────────────────
   @Post('topup/:reference/verify')
   @HttpCode(200)
@@ -109,10 +205,7 @@ export class WalletController {
   })
   @OkExample({ status: 'PAID', paymentGroupId: null })
   @StandardErrors()
-  verifyTopup(
-    @CurrentUser('id') _userId: number,
-    @Param('reference') reference: string,
-  ) {
+  verifyTopup(@CurrentUser('id') _userId: number, @Param('reference') reference: string) {
     if (typeof reference !== 'string' || !reference || reference.length > 191)
       throw new BadRequestException('A valid payment reference is required.');
     return this.payments.verifyReference(reference);
@@ -124,7 +217,7 @@ export class WalletController {
   @ApiOperation({
     summary: 'Paginated wallet transaction history',
     description:
-      'Returns all `CREDIT` and `DEBIT` entries for the authenticated user\'s wallet, newest first. ' +
+      "Returns all `CREDIT` and `DEBIT` entries for the authenticated user's wallet, newest first. " +
       'Also includes the current balance so the frontend does not need a separate balance call. \n\n' +
       '**Transaction types**: \n' +
       '- `CREDIT` — wallet top-up or admin credit \n' +
@@ -133,7 +226,12 @@ export class WalletController {
       '**Eligible roles**: `CUSTOMER`, `VENDOR`',
   })
   @ApiQuery({ name: 'page', required: false, example: 1, description: 'Page number (default: 1)' })
-  @ApiQuery({ name: 'limit', required: false, example: 20, description: 'Items per page (default: 20, max: 100)' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    example: 15,
+    description: 'Items per page (default: 15, max: 100)',
+  })
   @OkExample({
     balance: '2500.00',
     currency: 'NGN',
@@ -157,7 +255,7 @@ export class WalletController {
     ],
     total: 2,
     page: 1,
-    limit: 20,
+    limit: 15,
     pages: 1,
   })
   @StandardErrors()
@@ -167,7 +265,29 @@ export class WalletController {
     @Query('limit') limit?: string,
   ) {
     const p = Math.max(1, parseInt(page ?? '1', 10) || 1);
-    const l = Math.min(100, Math.max(1, parseInt(limit ?? '20', 10) || 20));
+    const l = Math.min(100, Math.max(1, parseInt(limit ?? '15', 10) || 15));
     return this.payments.walletTransactions(userId, p, l);
+  }
+
+  @Post('withdraw')
+  @RequireAuth([], ['CUSTOMER', 'VENDOR'])
+  @ApiOperation({ summary: 'Request a withdrawal from the customer wallet' })
+  @StandardErrors()
+  withdraw(@CurrentUser('id') userId: number, @Body() dto: WithdrawWalletDto) {
+    return this.payments.requestWalletWithdrawal(userId, dto);
+  }
+
+  @Get('withdrawals')
+  @RequireAuth([], ['CUSTOMER', 'VENDOR'])
+  @ApiOperation({ summary: 'List customer wallet withdrawal requests' })
+  @StandardErrors()
+  withdrawals(
+    @CurrentUser('id') userId: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const p = Math.max(1, parseInt(page ?? '1', 10) || 1);
+    const l = Math.min(100, Math.max(1, parseInt(limit ?? '15', 10) || 15));
+    return this.payments.walletWithdrawals(userId, p, l);
   }
 }

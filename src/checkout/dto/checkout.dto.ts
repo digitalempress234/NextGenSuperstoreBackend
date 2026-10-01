@@ -34,10 +34,10 @@ export class CreateCheckoutDto {
   @ValidateNested()
   @Type(() => CheckoutAddressDto)
   address?: CheckoutAddressDto;
-  @ApiPropertyOptional({ enum: ['card', 'opay', 'wallet'], default: 'card' })
+  @ApiPropertyOptional({ enum: ['card', 'bank_transfer', 'wallet'], default: 'card' })
   @IsOptional()
-  @IsIn(['card', 'opay', 'wallet'])
-  paymentMethod?: 'card' | 'opay' | 'wallet';
+  @IsIn(['card', 'bank_transfer', 'wallet'])
+  paymentMethod?: 'card' | 'bank_transfer' | 'wallet';
 }
 
 export class PlaceOrderDto extends OmitType(CreateCheckoutDto, [
@@ -51,7 +51,7 @@ export class PlaceOrderDto extends OmitType(CreateCheckoutDto, [
   @ApiProperty({ enum: ['home_delivery', 'store_pickup'] })
   @IsIn(['home_delivery', 'store_pickup'])
   deliveryMethod!: 'home_delivery' | 'store_pickup';
-  @ApiProperty({ enum: ['card', 'opay', 'wallet'] })
-  @IsIn(['card', 'opay', 'wallet'])
-  paymentMethod!: 'card' | 'opay' | 'wallet';
+  @ApiProperty({ enum: ['card', 'bank_transfer', 'wallet'] })
+  @IsIn(['card', 'bank_transfer', 'wallet'])
+  paymentMethod!: 'card' | 'bank_transfer' | 'wallet';
 }

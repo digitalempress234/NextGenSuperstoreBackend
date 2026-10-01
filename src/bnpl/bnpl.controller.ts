@@ -34,6 +34,7 @@ import { assertCheckoutStaff } from '../checkout/checkout-settings.controller';
 import { BnplPlanDto, UpdateBnplPlanDto } from '../checkout/checkout-settings.dto';
 import { ApplyBnplDto, BnplPlansQuery, ConfirmBnplDto, ReviewBnplDto } from './bnpl.dto';
 import { BnplService } from './bnpl.service';
+import { PayBnplRepaymentDto } from './bnpl.dto';
 
 @ApiTags('BNPL')
 @ApiCookieAuth('purse_access_token')
@@ -135,6 +136,16 @@ export class BnplController {
   @ApiOperation({ summary: 'Cancel a pending or approved BNPL application' })
   cancel(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
     return this.bnpl.cancel(userId, id);
+  }
+  @Get('repayments')
+  @ApiOperation({ summary: 'Customer: list BNPL installment and repayment history' })
+  repayments(@CurrentUser('id') userId: number) {
+    return this.bnpl.repayments(userId);
+  }
+  @Post('repayments/pay')
+  @ApiOperation({ summary: 'Customer: pay a BNPL installment with wallet or card' })
+  payRepayment(@CurrentUser('id') userId: number, @Body() dto: PayBnplRepaymentDto) {
+    return this.bnpl.payRepayment(userId, dto);
   }
 }
 

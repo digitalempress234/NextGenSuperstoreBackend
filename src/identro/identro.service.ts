@@ -10,6 +10,7 @@ import type {
   IdentroCacNameSearchResponse,
   IdentroCompanyType,
   IdentroDriversLicenseResponse,
+  IdentroDriverLicenseRequestListResponse,
   IdentroFaceVerifyRequest,
   IdentroFaceVerifyResponse,
   IdentroIdentityExtracted,
@@ -33,8 +34,7 @@ export class IdentroService {
     this.baseUrl = this.config.getOrThrow<string>('IDENTRO_BASE_URL');
     this.apiKey = this.config.getOrThrow<string>('IDENTRO_API_KEY');
     this.apiKeyHeader = this.config.get<string>('IDENTRO_API_KEY_HEADER') ?? 'x-api-key';
-    this.autoApproveOnMatch =
-      this.config.get<string>('IDENTRO_AUTO_APPROVE_ON_MATCH') === 'true';
+    this.autoApproveOnMatch = this.config.get<string>('IDENTRO_AUTO_APPROVE_ON_MATCH') === 'true';
   }
 
   get shouldAutoApprove(): boolean {
@@ -44,10 +44,7 @@ export class IdentroService {
   async mintSdkSessionToken(
     dto: IdentroLivenessSessionRequest,
   ): Promise<IdentroLivenessSessionResponse> {
-    return this.post<IdentroLivenessSessionResponse>(
-      '/merchant-api/face/requests',
-      dto,
-    );
+    return this.post<IdentroLivenessSessionResponse>('/merchant-api/face/requests', dto);
   }
 
   async verifyNin(
@@ -64,13 +61,51 @@ export class IdentroService {
 
   async verifyDriversLicense(
     licenseNumber: string,
-    opts: { firstname?: string; lastname?: string; idempotencyKey?: string } = {},
+    opts: {
+      firstname?: string;
+      lastname?: string;
+      idempotencyKey?: string;
+      consentCaptured?: boolean;
+    } = {},
   ): Promise<IdentroIdentityExtracted> {
-    const raw = await this.post<IdentroDriversLicenseResponse>('/merchant-api/driver-license/verify', {
-      licenseNumber,
-      consentCaptured: true,
-      ...opts,
-    });
+    const raw = await this.post<IdentroDriversLicenseResponse>(
+      '/merchant-api/driver-license/verify',
+      {
+        serviceType: 'DRIVER_LICENSE_VERIFICATION',
+        licenseNumber,
+        consentCaptured: opts.consentCaptured ?? true,
+        ...opts,
+      },
+    );
+    return this.normaliseIdentity(raw);
+  }
+
+  async createDriverLicenseRequest(
+    licenseNumber: string,
+    idempotencyKey: string,
+  ): Promise<IdentroIdentityExtracted> {
+    const raw = await this.post<IdentroDriversLicenseResponse>(
+      '/merchant-api/driver-license/requests',
+      {
+        serviceType: 'DRIVER_LICENSE_VERIFICATION',
+        licenseNumber,
+        consentCaptured: true,
+        idempotencyKey,
+      },
+    );
+    return this.normaliseIdentity(raw);
+  }
+
+  listDriverLicenseRequests(): Promise<IdentroDriverLicenseRequestListResponse> {
+    return this.get<IdentroDriverLicenseRequestListResponse>(
+      '/merchant-api/driver-license/requests',
+    );
+  }
+
+  async getDriverLicenseRequest(reference: string): Promise<IdentroIdentityExtracted> {
+    const raw = await this.get<IdentroDriversLicenseResponse>(
+      `/merchant-api/driver-license/requests/${encodeURIComponent(reference)}`,
+    );
     return this.normaliseIdentity(raw);
   }
 
@@ -154,7 +189,11 @@ export class IdentroService {
     const body =
       mode === 'tin'
         ? { tin: regNumberOrTin, consentCaptured: true, ...(idempotencyKey && { idempotencyKey }) }
-        : { regNumber: regNumberOrTin, consentCaptured: true, ...(idempotencyKey && { idempotencyKey }) };
+        : {
+            regNumber: regNumberOrTin,
+            consentCaptured: true,
+            ...(idempotencyKey && { idempotencyKey }),
+          };
 
     return this.post<IdentroTinResponse>('/merchant-api/tin', body) as Promise<
       Record<string, unknown>
@@ -177,8 +216,6 @@ export class IdentroService {
       identroRaw: raw as Record<string, unknown>,
     };
   }
-
-  
 
   private async post<T>(path: string, body: unknown): Promise<T> {
     const response = await fetch(`${this.baseUrl}${path}`, {
@@ -206,6 +243,30 @@ export class IdentroService {
       throw new InternalServerErrorException('Identro verification returned a failure response.');
     }
 
+    return json;
+  }
+
+  private async get<T>(path: string): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      headers: {
+        [this.apiKeyHeader]: this.apiKey,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error(`Identro ${path} failed: ${response.status} ${text}`);
+      throw new InternalServerErrorException(
+        `Identro verification call failed (${response.status}).`,
+      );
+    }
+
+    const json = (await response.json()) as { success?: boolean } & T;
+    if (json.success === false) {
+      this.logger.error(`Identro ${path} returned success=false: ${JSON.stringify(json)}`);
+      throw new InternalServerErrorException('Identro verification returned a failure response.');
+    }
     return json;
   }
 }

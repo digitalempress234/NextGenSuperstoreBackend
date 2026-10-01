@@ -12,135 +12,173 @@ import {
 export class MarketplaceService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async scan(code: string) {
+    const normalized = code?.trim().toUpperCase();
+    if (!normalized) throw new BadRequestException('A barcode or SKU is required.');
+    const offer = await this.prisma.storeProduct.findFirst({
+      where: {
+        isActive: true,
+        availability: true,
+        store: { isActive: true },
+        product: { status: true },
+        OR: [{ barcode: normalized }, { sku: normalized }, { product: { barcode: normalized } }],
+      },
+      include: {
+        product: {
+          include: {
+            images: true,
+            offers: {
+              where: { isActive: true, availability: true, store: { isActive: true } },
+              include: { store: true },
+              orderBy: { price: 'asc' },
+            },
+          },
+        },
+      },
+    });
+    if (!offer) throw new NotFoundException('No active product matches this scan.');
+    return {
+      matchType:
+        offer.barcode === normalized
+          ? 'store_barcode'
+          : offer.sku?.toUpperCase() === normalized
+            ? 'sku'
+            : 'manufacturer_barcode',
+      product: offer.product,
+      offers: offer.product.offers,
+    };
+  }
+
   async home() {
-    const [categories, stores, featuredProducts, popularProducts, discountedProducts] = await this.prisma.$transaction([
-      this.prisma.category.findMany({
-        where: {
-          isActive: true,
-          level: 0,
-        },
-        orderBy: { name: 'asc' },
-        take: 12,
-      }),
-      this.prisma.store.findMany({
-        where: { isActive: true },
-        orderBy: { storeName: 'asc' },
-        take: 12,
-        select: {
-          id: true,
-          storeName: true,
-          description: true,
-          state: true,
-          city: true,
-          imageUrl: true,
-          images: {
-            select: {
-              id: true,
-              storeId: true,
-              url: true,
-              publicId: true,
-              sortOrder: true,
-              createdAt: true,
-            },
-            orderBy: { sortOrder: 'asc' },
+    const [categories, stores, featuredProducts, popularProducts, discountedProducts] =
+      await this.prisma.$transaction([
+        this.prisma.category.findMany({
+          where: {
+            isActive: true,
+            level: 0,
           },
-          latitude: true,
-          longitude: true,
-        },
-      }),
-      this.prisma.product.findMany({
-        where: { status: true },
-        include: {
-          category: true,
-          images: { orderBy: { sortOrder: 'asc' }, take: 3 },
-          offers: {
-            where: {
-              isActive: true,
-              availability: true,
+          orderBy: { name: 'asc' },
+          take: 12,
+        }),
+        this.prisma.store.findMany({
+          where: { isActive: true },
+          orderBy: { storeName: 'asc' },
+          take: 12,
+          select: {
+            id: true,
+            storeName: true,
+            description: true,
+            state: true,
+            city: true,
+            imageUrl: true,
+            images: {
+              select: {
+                id: true,
+                storeId: true,
+                url: true,
+                publicId: true,
+                sortOrder: true,
+                createdAt: true,
+              },
+              orderBy: { sortOrder: 'asc' },
             },
-            include: {
-              store: {
-                select: {
-                  id: true,
-                  storeName: true,
-                  state: true,
-                  city: true,
-                  imageUrl: true,
+            latitude: true,
+            longitude: true,
+          },
+        }),
+        this.prisma.product.findMany({
+          where: { status: true },
+          include: {
+            category: true,
+            images: { orderBy: { sortOrder: 'asc' }, take: 3 },
+            offers: {
+              where: {
+                isActive: true,
+                availability: true,
+              },
+              include: {
+                store: {
+                  select: {
+                    id: true,
+                    storeName: true,
+                    state: true,
+                    city: true,
+                    imageUrl: true,
+                  },
                 },
               },
+              orderBy: { price: 'asc' },
+              take: 5,
             },
-            orderBy: { price: 'asc' },
-            take: 5,
           },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 12,
-      }),
-      this.prisma.product.findMany({
-        where: { status: true },
-        include: {
-          category: true,
-          images: { orderBy: { sortOrder: 'asc' }, take: 2 },
-          offers: {
-            where: {
-              isActive: true,
-              availability: true,
-            },
-            include: {
-              store: {
-                select: {
-                  id: true,
-                  storeName: true,
-                  state: true,
-                  city: true,
+          orderBy: { createdAt: 'desc' },
+          take: 12,
+        }),
+        this.prisma.product.findMany({
+          where: { status: true },
+          include: {
+            category: true,
+            images: { orderBy: { sortOrder: 'asc' }, take: 2 },
+            offers: {
+              where: {
+                isActive: true,
+                availability: true,
+              },
+              include: {
+                store: {
+                  select: {
+                    id: true,
+                    storeName: true,
+                    state: true,
+                    city: true,
+                  },
                 },
               },
-            },
-            orderBy: { price: 'asc' },
-            take: 3,
-          },
-        },
-        orderBy: { orderItems: { _count: 'desc' } },
-        take: 12,
-      }),
-      this.prisma.product.findMany({
-        where: {
-          status: true,
-          offers: {
-            some: {
-              isActive: true,
-              availability: true,
-              discountPrice: { not: null },
+              orderBy: { price: 'asc' },
+              take: 3,
             },
           },
-        },
-        include: {
-          category: true,
-          images: { orderBy: { sortOrder: 'asc' }, take: 2 },
-          offers: {
-            where: {
-              isActive: true,
-              availability: true,
-              discountPrice: { not: null },
-            },
-            include: {
-              store: {
-                select: {
-                  id: true,
-                  storeName: true,
-                  state: true,
-                  city: true,
-                },
+          orderBy: { orderItems: { _count: 'desc' } },
+          take: 12,
+        }),
+        this.prisma.product.findMany({
+          where: {
+            status: true,
+            offers: {
+              some: {
+                isActive: true,
+                availability: true,
+                discountPrice: { not: null },
               },
             },
-            orderBy: { price: 'asc' },
-            take: 3,
           },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 12,
-      }),
-    ]);
+          include: {
+            category: true,
+            images: { orderBy: { sortOrder: 'asc' }, take: 2 },
+            offers: {
+              where: {
+                isActive: true,
+                availability: true,
+                discountPrice: { not: null },
+              },
+              include: {
+                store: {
+                  select: {
+                    id: true,
+                    storeName: true,
+                    state: true,
+                    city: true,
+                  },
+                },
+              },
+              orderBy: { price: 'asc' },
+              take: 3,
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 12,
+        }),
+      ]);
 
     return {
       categories,
@@ -153,7 +191,7 @@ export class MarketplaceService {
 
   async browse(query: BrowseMarketplaceDto) {
     const page = Math.max(1, Number(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 15));
     const skip = (page - 1) * limit;
 
     const priceFilter =
@@ -309,7 +347,7 @@ export class MarketplaceService {
 
   async stores(query: SearchStoresDto) {
     const page = Math.max(1, Number(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 15));
     const skip = (page - 1) * limit;
 
     const where = {

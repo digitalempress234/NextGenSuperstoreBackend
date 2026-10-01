@@ -1,20 +1,27 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BankResolverService } from './bank-resolver.service';
 import {
   CreateBankAccountDto,
+  CreateGuarantorDocumentDto,
   CreateGuarantorDto,
+  CreateRiderLicenceDto,
   CreateRiderDocumentDto,
+  CreateVehicleDocumentDto,
   CreateVehicleDto,
   MintKycSessionDto,
   UpdateRiderProfileDto,
+  UpdateVehicleDto,
+  ReplaceVehicleDocumentDto,
   VerifyGuarantorDocumentDto,
+  VerifyDriverLicenseDto,
   VerifyRiderDocumentDto,
 } from './dto/rider.dto';
 import { IdentroService } from '../identro/identro.service';
-import { QoreIDService } from '../qoreid/qoreid.service';
+import { assessRiderReadiness } from './rider-readiness';
 
 @Injectable()
 export class RidersService {
@@ -25,72 +32,76 @@ export class RidersService {
     private readonly notifications: NotificationsService,
     private readonly banks: BankResolverService,
     private readonly identro: IdentroService,
-    private readonly qoreid: QoreIDService,
   ) {}
 
   getOnboardingRequirements() {
     return {
-      profileMessage: 'Your Account is Under Review',
-      requirements: [
+      strategy: 'PROGRESSIVE_KYC',
+      stages: [
         {
-          key: 'identity',
-          label: 'Identity / KYC',
-          required: true,
-          description: 'NIN/NIN slip or approved government-issued ID.',
+          key: 'APPLICATION',
+          label: 'Quick application',
+          description: 'Required before submitting the rider application.',
+          requirements: [
+            { key: 'areaOfOperation', label: 'Service area', required: true },
+            {
+              key: 'identity',
+              label: 'Government identity number (a verified driver licence also qualifies)',
+              required: true,
+            },
+            { key: 'liveness', label: 'Start liveness-only verification', required: true },
+            {
+              key: 'driverLicence',
+              label: 'Submit licence number for automatic verification',
+              required: true,
+            },
+            { key: 'motorcycle', label: 'Motorcycle, plate, and photograph', required: true },
+            {
+              key: 'vehicleRegistration',
+              label: 'Motorcycle registration document',
+              required: true,
+            },
+            { key: 'emergencyContact', label: 'Emergency contact', required: true },
+          ],
         },
         {
-          key: 'profilePhoto',
-          label: 'Passport/profile photograph',
-          required: true,
-          description: 'Recent clear profile photograph.',
+          key: 'OPERATIONAL_APPROVAL',
+          label: 'Operational verification',
+          description: 'Required before a motorized rider can accept live deliveries.',
+          requirements: [
+            { key: 'approvedIdentity', label: 'Approved identity', required: true },
+            { key: 'approvedLiveness', label: 'Approved liveness', required: true },
+            {
+              key: 'riderLicence',
+              label: 'Provider-verified driving/rider licence',
+              required: true,
+            },
+            {
+              key: 'vehicleRegistration',
+              label: 'Vehicle registration',
+              required: 'MOTORIZED_VEHICLES_ONLY',
+            },
+            {
+              key: 'motorcyclePhoto',
+              label: 'Admin-approved motorcycle photo and plate',
+              required: true,
+            },
+          ],
         },
         {
-          key: 'liveness',
-          label: 'Live selfie / liveness verification',
-          required: true,
-          description: 'Complete the supported liveness verification process.',
-        },
-        {
-          key: 'riderLicence',
-          label: 'Rider/motorcycle licence',
-          required: true,
-          description: 'Valid rider or motorcycle licence where applicable.',
-        },
-        {
-          key: 'vehicleRegistration',
-          label: 'Vehicle registration',
-          required: true,
-          description: 'Current registration and proof of lawful use.',
-        },
-        {
-          key: 'vehiclePhoto',
-          label: 'Vehicle photo',
-          required: true,
-          description: 'Clear vehicle and plate-number photographs.',
-        },
-        {
-          key: 'insurance',
-          label: 'Insurance',
-          required: false,
-          description: 'Required where applicable.',
-        },
-        {
-          key: 'roadworthiness',
-          label: 'Roadworthiness',
-          required: false,
-          description: 'Required where applicable.',
-        },
-        {
-          key: 'guarantor',
-          label: 'Guarantor',
-          required: true,
-          description: 'Guarantor profile and government-issued ID.',
-        },
-        {
-          key: 'bankAccount',
-          label: 'Bank account',
-          required: true,
-          description: 'Account details must be resolved and verified automatically.',
+          key: 'CONDITIONAL_REVIEW',
+          label: 'Risk-based checks',
+          description: 'Requested only when compliance determines they are necessary.',
+          requirements: [
+            {
+              key: 'ownershipPermission',
+              label: 'Proof of ownership or permission to use',
+              required: false,
+            },
+            { key: 'guarantor', label: 'Guarantor and guarantor ID', required: false },
+            { key: 'insurance', label: 'Insurance', required: false },
+            { key: 'roadworthiness', label: 'Roadworthiness certificate', required: false },
+          ],
         },
       ],
     };
@@ -114,17 +125,26 @@ export class RidersService {
       return null;
     }
 
-    const canSubmit =
-      profile.documents.length > 0 &&
-      profile.vehicles.length > 0 &&
-      profile.bankAccounts.some((account) => account.verificationStatus === 'APPROVED');
+    const readiness = assessRiderReadiness(profile);
 
     return {
       ...profile,
       statusMessage:
         profile.onboardingStatus === 'UNDER_REVIEW' ? 'Your Account is Under Review' : undefined,
-      canSubmit,
+      ...readiness,
     };
+  }
+
+  inbox(userId: number, page = 1, limit = 15) {
+    return this.notifications.list(userId, { page, limit });
+  }
+
+  async settings(userId: number) {
+    const [profile, notificationPreferences] = await Promise.all([
+      this.getProfile(userId),
+      this.notifications.preferences(userId),
+    ]);
+    return { profile, notificationPreferences };
   }
 
   async updateProfile(userId: number, dto: UpdateRiderProfileDto) {
@@ -173,6 +193,186 @@ export class RidersService {
     });
   }
 
+  async updateVehicle(userId: number, vehicleId: number, dto: UpdateVehicleDto) {
+    const rider = await this.requireProfile(userId);
+    this.ensureApplicationEditable(rider.onboardingStatus);
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, riderId: rider.id },
+    });
+    if (!vehicle) throw new NotFoundException('Motorcycle not found or does not belong to rider.');
+    if (!['PENDING', 'REJECTED'].includes(vehicle.status)) {
+      throw new BadRequestException('Only pending or rejected motorcycle evidence can be edited.');
+    }
+    return this.prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: {
+        ...dto,
+        ...(dto.plateNumber && { plateNumber: dto.plateNumber.trim().toUpperCase() }),
+        status: 'PENDING',
+      },
+    });
+  }
+
+  async addLicence(userId: number, dto: CreateRiderLicenceDto) {
+    const rider = await this.requireProfile(userId);
+    return this.prisma.riderLicence.create({
+      data: {
+        riderId: rider.id,
+        type: dto.type,
+        number: dto.number,
+        issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
+        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+        documentUrl: dto.documentUrl,
+      },
+    });
+  }
+
+  async verifyDriverLicense(userId: number, dto: VerifyDriverLicenseDto, trackedRequest = false) {
+    const rider = await this.requireProfile(userId);
+    const existing = await this.prisma.riderLicence.findUnique({
+      where: {
+        riderId_idempotencyKey: { riderId: rider.id, idempotencyKey: dto.idempotencyKey },
+      },
+    });
+    if (existing) return this.safeLicence(existing);
+
+    const result = trackedRequest
+      ? await this.identro.createDriverLicenseRequest(
+          dto.licenseNumber.trim().toUpperCase(),
+          dto.idempotencyKey,
+        )
+      : await this.identro.verifyDriversLicense(dto.licenseNumber.trim().toUpperCase(), {
+          idempotencyKey: dto.idempotencyKey,
+          consentCaptured: dto.consentCaptured,
+        });
+
+    const providerStatus = result.identroStatus ?? 'PENDING';
+    const status =
+      providerStatus === 'VERIFIED'
+        ? ('APPROVED' as const)
+        : ['FAILED', 'NOT_FOUND', 'REJECTED'].includes(providerStatus)
+          ? ('REJECTED' as const)
+          : ('PENDING' as const);
+    const licence = await this.prisma.riderLicence.create({
+      data: {
+        riderId: rider.id,
+        type: 'DRIVERS_LICENSE',
+        number: dto.licenseNumber.trim().toUpperCase(),
+        status,
+        provider: 'identro',
+        providerReference: result.identroReference,
+        providerStatus,
+        providerRaw: result.identroRaw as object,
+        idempotencyKey: dto.idempotencyKey,
+        consentCapturedAt: new Date(),
+        verifiedAt: status === 'APPROVED' ? new Date() : null,
+      },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'RIDER_LICENSE_PROVIDER_VERIFICATION',
+        entity: 'RiderLicence',
+        entityId: String(licence.id),
+        changes: { provider: 'identro', providerStatus, status },
+      },
+    });
+    return this.safeLicence(licence);
+  }
+
+  async listDriverLicenseRequests(userId: number, page = 1, limit = 15) {
+    const rider = await this.requireProfile(userId);
+    const skip = (page - 1) * limit;
+    const where = { riderId: rider.id, provider: 'identro' };
+    const [records, total] = await Promise.all([
+      this.prisma.riderLicence.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.riderLicence.count({ where }),
+    ]);
+    return { items: records.map((record) => this.safeLicence(record)), total, page, limit };
+  }
+
+  async syncDriverLicenseRequest(userId: number, reference: string) {
+    const rider = await this.requireProfile(userId);
+    const licence = await this.prisma.riderLicence.findFirst({
+      where: { riderId: rider.id, providerReference: reference },
+    });
+    if (!licence) throw new NotFoundException('Driver licence request not found.');
+    const result = await this.identro.getDriverLicenseRequest(reference);
+    const providerStatus = result.identroStatus ?? 'PENDING';
+    const status =
+      providerStatus === 'VERIFIED'
+        ? ('APPROVED' as const)
+        : ['FAILED', 'NOT_FOUND', 'REJECTED'].includes(providerStatus)
+          ? ('REJECTED' as const)
+          : ('PENDING' as const);
+    const updated = await this.prisma.riderLicence.update({
+      where: { id: licence.id },
+      data: {
+        providerStatus,
+        providerRaw: result.identroRaw as object,
+        status,
+        verifiedAt: status === 'APPROVED' ? new Date() : null,
+      },
+    });
+    return this.safeLicence(updated);
+  }
+
+  async addVehicleDocument(userId: number, vehicleId: number, dto: CreateVehicleDocumentDto) {
+    const rider = await this.requireProfile(userId);
+    const vehicle = await this.prisma.vehicle.findFirst({
+      where: { id: vehicleId, riderId: rider.id },
+    });
+    if (!vehicle)
+      throw new NotFoundException('Vehicle not found or does not belong to this rider.');
+    return this.prisma.vehicleDocument.create({
+      data: {
+        vehicleId,
+        type: dto.type,
+        documentNumber: dto.documentNumber,
+        url: dto.url,
+        publicId: dto.publicId,
+        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+      },
+    });
+  }
+
+  async replaceVehicleDocument(
+    userId: number,
+    vehicleId: number,
+    documentId: number,
+    dto: ReplaceVehicleDocumentDto,
+  ) {
+    const rider = await this.requireProfile(userId);
+    this.ensureApplicationEditable(rider.onboardingStatus);
+    const document = await this.prisma.vehicleDocument.findFirst({
+      where: { id: documentId, vehicleId, vehicle: { riderId: rider.id } },
+    });
+    if (!document) {
+      throw new NotFoundException('Motorcycle document not found or does not belong to rider.');
+    }
+    if (document.status !== 'REJECTED') {
+      throw new BadRequestException('Only a rejected motorcycle document can be replaced.');
+    }
+    return this.prisma.vehicleDocument.update({
+      where: { id: documentId },
+      data: {
+        documentNumber: dto.documentNumber,
+        url: dto.url,
+        publicId: dto.publicId,
+        expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : null,
+        status: 'PENDING',
+        rejectionReason: null,
+        reviewedById: null,
+        reviewedAt: null,
+      },
+    });
+  }
+
   async addBankAccount(userId: number, dto: CreateBankAccountDto) {
     const rider = await this.requireProfile(userId);
     const resolved = await this.banks.resolveAccount(dto.bankCode, dto.accountNumber);
@@ -214,11 +414,31 @@ export class RidersService {
     });
   }
 
+  async addGuarantorDocument(userId: number, guarantorId: number, dto: CreateGuarantorDocumentDto) {
+    const rider = await this.requireProfile(userId);
+    const guarantor = await this.prisma.guarantor.findFirst({
+      where: { id: guarantorId, riderId: rider.id },
+    });
+    if (!guarantor)
+      throw new NotFoundException('Guarantor not found or does not belong to this rider.');
+    return this.prisma.guarantorDocument.create({
+      data: {
+        guarantorId,
+        type: dto.type,
+        documentNumber: dto.documentNumber,
+        url: dto.url,
+        publicId: dto.publicId,
+      },
+    });
+  }
+
   async submitForReview(userId: number) {
     const rider = await this.prisma.riderProfile.findUnique({
       where: { userId },
       include: {
         documents: true,
+        licences: true,
+        liveness: true,
         vehicles: { include: { documents: true } },
         bankAccounts: true,
       },
@@ -228,25 +448,25 @@ export class RidersService {
       throw new NotFoundException('Rider profile not found.');
     }
 
-    if (rider.documents.length === 0) {
-      throw new BadRequestException('At least one identity document is required.');
-    }
+    this.ensureApplicationEditable(rider.onboardingStatus);
 
-    if (rider.vehicles.length === 0) {
-      throw new BadRequestException('At least one vehicle is required.');
-    }
-
-    if (rider.bankAccounts.length === 0) {
-      throw new BadRequestException('A verified payout bank account is required.');
-    }
-
-    if (!rider.bankAccounts.some((account) => account.verificationStatus === 'APPROVED')) {
-      throw new BadRequestException('Your payout bank account must be verified before submission.');
+    const readiness = assessRiderReadiness(rider);
+    if (readiness.missingApplicationRequirements.length) {
+      throw new BadRequestException({
+        message: 'Complete the quick application requirements before submitting.',
+        missingRequirements: readiness.missingApplicationRequirements,
+      });
     }
 
     const updated = await this.prisma.riderProfile.update({
       where: { id: rider.id },
-      data: { onboardingStatus: 'UNDER_REVIEW' },
+      data: {
+        onboardingStatus: 'UNDER_REVIEW',
+        rejectionReason: null,
+        rejectedAt: null,
+        rejectedEvidence: Prisma.DbNull,
+        submissionAttempt: { increment: 1 },
+      },
     });
 
     await this.notifications.notifyUser({
@@ -262,7 +482,13 @@ export class RidersService {
       },
     });
 
-    return { ...updated, statusMessage: 'Your Account is Under Review', canSubmit: false };
+    return {
+      ...updated,
+      statusMessage: 'Your Account is Under Review',
+      canSubmit: false,
+      canAcceptDeliveries: false,
+      missingOperationalRequirements: readiness.missingOperationalRequirements,
+    };
   }
 
   private async requireProfile(userId: number) {
@@ -277,25 +503,31 @@ export class RidersService {
     return rider;
   }
 
-  
-  
-  
+  private ensureApplicationEditable(onboardingStatus: string) {
+    if (onboardingStatus === 'UNDER_REVIEW') {
+      throw new BadRequestException('This rider application is already under review.');
+    }
+    if (onboardingStatus === 'APPROVED') {
+      throw new BadRequestException('An approved rider cannot resubmit onboarding.');
+    }
+    if (onboardingStatus === 'SUSPENDED') {
+      throw new BadRequestException(
+        'A suspended rider cannot resubmit until the suspension is removed.',
+      );
+    }
+  }
 
-  
   async mintKycSession(userId: number, dto: MintKycSessionDto) {
     const rider = await this.requireProfile(userId);
 
     const session = await this.identro.mintSdkSessionToken({
-      serviceType: dto.serviceType,
-      sourceType: dto.sourceType,
-      ...(dto.nin && { nin: dto.nin }),
+      serviceType: 'FACE_LIVENESS_ONLY',
       ...(dto.consentReference && { consentReference: dto.consentReference }),
       ...(dto.idempotencyKey && { idempotencyKey: dto.idempotencyKey }),
-      
+
       subjectRef: `rider-${rider.id}`,
     });
 
-    
     await this.prisma.riderLivenessVerification.create({
       data: {
         riderId: rider.id,
@@ -306,14 +538,12 @@ export class RidersService {
       },
     });
 
-    
     return {
       sdkSessionToken: session.sdkToken,
       expiresAt: session.expiresAt,
     };
   }
 
-  
   async verifyRiderDocument(userId: number, dto: VerifyRiderDocumentDto) {
     const rider = await this.requireProfile(userId);
 
@@ -329,32 +559,7 @@ export class RidersService {
       throw new BadRequestException('Document number is required for automated verification.');
     }
 
-    
-    let verifyResult = await this.dispatchDocumentVerify(document.type, document.documentNumber);
-
-    
-    let faceMatchScore: number | undefined;
-    if (
-      dto.selfieBase64 &&
-      (document.type === 'NIN' ||
-        document.type === 'NIN_SLIP' ||
-        document.type === 'NATIONAL_ID' ||
-        document.type === 'DRIVERS_LICENSE')
-    ) {
-      const idType =
-        document.type === 'DRIVERS_LICENSE' ? 'DRIVERS_LICENSE' : 'NIN';
-      const faceResult = await this.identro.verifyFace({
-        nin: document.documentNumber,
-        submittedFaceBase64: dto.selfieBase64,
-        idType,
-      });
-      faceMatchScore = faceResult.faceMatchScore;
-      
-      verifyResult = {
-        ...verifyResult,
-        identroRaw: { ...verifyResult.identroRaw, faceVerification: faceResult.identroRaw },
-      };
-    }
+    const verifyResult = await this.dispatchDocumentVerify(document.type, document.documentNumber);
 
     const identroStatus = verifyResult.identroStatus ?? 'UNVERIFIED';
     const shouldApprove = identroStatus === 'VERIFIED' && this.identro.shouldAutoApprove;
@@ -362,10 +567,9 @@ export class RidersService {
     const updated = await this.prisma.riderDocument.update({
       where: { id: document.id },
       data: {
-        qoreidStatus: identroStatus,            
+        qoreidStatus: identroStatus,
         qoreidReference: verifyResult.identroReference,
         qoreidRaw: verifyResult.identroRaw as object,
-        ...(faceMatchScore !== undefined && { faceMatchScore }),
         ...(shouldApprove && { status: 'APPROVED' }),
       },
     });
@@ -379,7 +583,7 @@ export class RidersService {
           permission: 'kyc.review',
           entity: 'RiderDocument',
           entityId: String(document.id),
-          changes: { identroStatus, faceMatchScore: faceMatchScore ?? null },
+          changes: { identroStatus },
         },
       });
     }
@@ -387,11 +591,9 @@ export class RidersService {
     return updated;
   }
 
-  
   async verifyGuarantorDocument(userId: number, dto: VerifyGuarantorDocumentDto) {
     const rider = await this.requireProfile(userId);
 
-    
     const document = await this.prisma.guarantorDocument.findFirst({
       where: {
         id: dto.documentId,
@@ -423,7 +625,9 @@ export class RidersService {
     });
 
     if (shouldApprove) {
-      this.logger.log(`GuarantorDocument ${document.id} auto-approved by Identro (status=VERIFIED)`);
+      this.logger.log(
+        `GuarantorDocument ${document.id} auto-approved by Identro (status=VERIFIED)`,
+      );
       await this.prisma.auditLog.create({
         data: {
           actorId: null,
@@ -456,5 +660,11 @@ export class RidersService {
           `Document type "${type}" is not supported for automated verification.`,
         );
     }
+  }
+
+  private safeLicence<T extends { providerRaw?: unknown }>(licence: T) {
+    const safe = { ...licence };
+    delete safe.providerRaw;
+    return safe;
   }
 }

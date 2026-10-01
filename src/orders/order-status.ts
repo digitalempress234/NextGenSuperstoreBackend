@@ -1,0 +1,30 @@
+import type { OrderStatus } from '@prisma/client';
+
+export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+  ORDER_RECEIVED: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['PREPARING', 'CANCELLED'],
+  PREPARING: ['READY_FOR_PICKUP', 'RIDER_ASSIGNED', 'CANCELLED'],
+  READY_FOR_PICKUP: ['PICKED_UP', 'RIDER_ASSIGNED', 'CANCELLED'],
+  RIDER_ASSIGNED: ['PICKED_UP', 'OUT_FOR_DELIVERY', 'CANCELLED'],
+  OUT_FOR_DELIVERY: ['PICKED_UP', 'DELIVERED', 'CANCELLED'],
+  PICKED_UP: ['OUT_FOR_DELIVERY', 'DELIVERED', 'COMPLETED'],
+  DELIVERED: ['COMPLETED'],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
+export const STORE_MANAGED_ORDER_STATUSES: OrderStatus[] = ['PREPARING', 'READY_FOR_PICKUP'];
+
+export const ADMIN_INTERVENTION_ORDER_STATUSES: OrderStatus[] = [
+  'PREPARING',
+  'READY_FOR_PICKUP',
+  'RIDER_ASSIGNED',
+  'PICKED_UP',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+  'COMPLETED',
+];
+
+export function canTransitionOrder(from: OrderStatus, to: OrderStatus) {
+  return ORDER_STATUS_TRANSITIONS[from].includes(to);
+}
