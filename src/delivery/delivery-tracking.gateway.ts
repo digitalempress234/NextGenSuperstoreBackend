@@ -3,36 +3,35 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
+import { extractSocketAccessToken } from '../common/socket-auth';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeliveryTrackingService } from './delivery-tracking.service';
 import { UpdateDeliveryLocationDto } from './dto/tracking.dto';
+import {
+  DELIVERY_SOCKET_EVENTS,
+  DELIVERY_SOCKET_NAMESPACE,
+  DELIVERY_SOCKET_PATH,
+} from './delivery-websocket.contract';
 
 interface SocketUser {
   id: number;
   email: string;
 }
 
-function getCookieValue(header: string | undefined, key: string): string | undefined {
-  if (!header) return undefined;
-  for (const pair of header.split(';')) {
-    const index = pair.indexOf('=');
-    if (index === -1) continue;
-    const name = pair.slice(0, index).trim();
-    if (name !== key) continue;
-    return decodeURIComponent(pair.slice(index + 1).trim());
-  }
-  return undefined;
-}
+export { extractSocketAccessToken as extractDeliverySocketAccessToken } from '../common/socket-auth';
 
 @WebSocketGateway({
-  namespace: '/delivery',
+  path: DELIVERY_SOCKET_PATH,
+  namespace: DELIVERY_SOCKET_NAMESPACE,
   cors: {
     origin: (process.env.CORS_ORIGIN ?? '')
       .split(',')
@@ -42,7 +41,11 @@ function getCookieValue(header: string | undefined, key: string): string | undef
   },
   transports: ['websocket', 'polling'],
 })
-export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class DeliveryTrackingGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+  private readonly logger = new Logger(DeliveryTrackingGateway.name);
+
   @WebSocketServer()
   server!: Server;
 
@@ -53,9 +56,15 @@ export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDi
     private readonly tracking: DeliveryTrackingService,
   ) {}
 
+  afterInit(): void {
+    this.logger.log(
+      `Socket.IO delivery gateway ready (path=${DELIVERY_SOCKET_PATH}, namespace=${DELIVERY_SOCKET_NAMESPACE})`,
+    );
+  }
+
   async handleConnection(socket: Socket): Promise<void> {
     try {
-      const token = getCookieValue(socket.handshake.headers.cookie, 'purse_access_token');
+      const token = extractSocketAccessToken(socket);
       if (!token) {
         socket.disconnect(true);
         return;
@@ -76,7 +85,7 @@ export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDi
       }
 
       socket.data.user = { id: user.id, email: user.email } satisfies SocketUser;
-      socket.join(`user:${user.id}`);
+      await socket.join(`user:${user.id}`);
     } catch {
       socket.disconnect(true);
     }
@@ -92,18 +101,20 @@ export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDi
     batteryLevel: number | null;
     recordedAt: string;
   }): void {
-    this.server.to(`delivery:${event.deliveryId}`).emit('delivery.location.updated', event);
+    this.server
+      .to(`delivery:${event.deliveryId}`)
+      .emit(DELIVERY_SOCKET_EVENTS.locationUpdated, event);
   }
 
   broadcastStatus(event: { deliveryId: number; status: string; occurredAt: string }): void {
-    this.server.to(`delivery:${event.deliveryId}`).emit('delivery.status.updated', event);
+    this.server
+      .to(`delivery:${event.deliveryId}`)
+      .emit(DELIVERY_SOCKET_EVENTS.statusUpdated, event);
   }
 
-  handleDisconnect(_socket: Socket): void {
-    
-  }
+  handleDisconnect(): void {}
 
-  @SubscribeMessage('delivery:join')
+  @SubscribeMessage(DELIVERY_SOCKET_EVENTS.join)
   async joinDelivery(
     @ConnectedSocket() socket: Socket,
     @MessageBody() body: { deliveryId: number },
@@ -119,7 +130,7 @@ export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDi
     return { joined: true, deliveryId: body.deliveryId };
   }
 
-  @SubscribeMessage('delivery:location')
+  @SubscribeMessage(DELIVERY_SOCKET_EVENTS.locationInput)
   async updateLocation(
     @ConnectedSocket() socket: Socket,
     @MessageBody() body: UpdateDeliveryLocationDto & { deliveryId: number },
@@ -142,11 +153,11 @@ export class DeliveryTrackingGateway implements OnGatewayConnection, OnGatewayDi
     };
 
     this.broadcastLocation(event);
-    this.server.to(`user:${user.id}`).emit('delivery.location.ack', event);
+    this.server.to(`user:${user.id}`).emit(DELIVERY_SOCKET_EVENTS.locationAcknowledged, event);
     return { accepted: true };
   }
 
-  @SubscribeMessage('delivery:leave')
+  @SubscribeMessage(DELIVERY_SOCKET_EVENTS.leave)
   async leaveDelivery(
     @ConnectedSocket() socket: Socket,
     @MessageBody() body: { deliveryId: number },

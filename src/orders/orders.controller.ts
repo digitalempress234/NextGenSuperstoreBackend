@@ -164,10 +164,20 @@ export class OrdersController {
     },
     pickup: null,
     websocket: {
+      path: '/socket.io',
       namespace: '/delivery',
+      authentication: {
+        cookieName: 'purse_access_token',
+        authField: 'accessToken',
+        authorizationHeader: 'Bearer <access-token>',
+        queryTokensAccepted: false,
+      },
       joinEvent: 'delivery:join',
       payload: { deliveryId: 33 },
+      leaveEvent: 'delivery:leave',
+      riderLocationEvent: 'delivery:location',
       locationEvent: 'delivery.location.updated',
+      locationAcknowledgementEvent: 'delivery.location.ack',
       statusEvent: 'delivery.status.updated',
     },
   })

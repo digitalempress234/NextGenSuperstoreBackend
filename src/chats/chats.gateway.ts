@@ -8,9 +8,16 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { extractSocketAccessToken } from '../common/socket-auth';
 import { ChatsService } from './chats.service';
+import {
+  CHAT_SOCKET_EVENTS,
+  CHAT_SOCKET_NAMESPACE,
+  CHAT_SOCKET_PATH,
+} from './chat-websocket.contract';
 @WebSocketGateway({
-  namespace: '/purse/v1/ws/chat',
+  path: CHAT_SOCKET_PATH,
+  namespace: CHAT_SOCKET_NAMESPACE,
   cors: {
     credentials: true,
     origin: (process.env.CORS_ORIGIN ?? '')
@@ -27,19 +34,13 @@ export class ChatsGateway {
     private readonly config: ConfigService,
   ) {}
   private userId(socket: Socket) {
-    const cookie = String(socket.handshake.headers.cookie ?? '')
-      .split(';')
-      .map((v) => v.trim())
-      .find((v) => v.startsWith('purse_access_token='))
-      ?.split('=')
-      .slice(1)
-      .join('=');
-    if (!cookie) throw new Error('Authentication cookie is missing.');
-    return this.jwt.verify<{ sub: number }>(decodeURIComponent(cookie), {
+    const token = extractSocketAccessToken(socket);
+    if (!token) throw new Error('Authentication token is missing.');
+    return this.jwt.verify<{ sub: number }>(token, {
       secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
     }).sub;
   }
-  @SubscribeMessage('chat:join') async join(
+  @SubscribeMessage(CHAT_SOCKET_EVENTS.join) async join(
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { conversationId: number },
   ) {
@@ -48,12 +49,12 @@ export class ChatsGateway {
     await socket.join(`chat:${data.conversationId}`);
     return { joined: true, conversationId: data.conversationId };
   }
-  @SubscribeMessage('chat:message') async message(
+  @SubscribeMessage(CHAT_SOCKET_EVENTS.sendMessage) async message(
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { conversationId: number; body: string },
   ) {
     const message = await this.chats.send(this.userId(socket), data.conversationId, data.body);
-    this.server.to(`chat:${data.conversationId}`).emit('chat.message.created', message);
+    this.server.to(`chat:${data.conversationId}`).emit(CHAT_SOCKET_EVENTS.messageCreated, message);
     return message;
   }
 }

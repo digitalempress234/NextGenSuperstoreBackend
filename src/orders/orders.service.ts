@@ -13,6 +13,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { AuthenticatedUser } from '../common/types';
 import { canTransitionOrder, STORE_MANAGED_ORDER_STATUSES } from './order-status';
+import {
+  DELIVERY_SOCKET_AUTH,
+  DELIVERY_SOCKET_EVENTS,
+  DELIVERY_SOCKET_NAMESPACE,
+  DELIVERY_SOCKET_PATH,
+} from '../delivery/delivery-websocket.contract';
 
 function screenStatus(status: OrderStatus) {
   if (status === 'ORDER_RECEIVED' || status === 'CONFIRMED') return 'pending';
@@ -291,11 +297,16 @@ export class OrdersService {
 
       websocket: order.delivery
         ? {
-            namespace: '/delivery',
-            joinEvent: 'delivery:join',
+            path: DELIVERY_SOCKET_PATH,
+            namespace: DELIVERY_SOCKET_NAMESPACE,
+            authentication: DELIVERY_SOCKET_AUTH,
+            joinEvent: DELIVERY_SOCKET_EVENTS.join,
             payload: { deliveryId: order.delivery.id },
-            locationEvent: 'delivery.location.updated',
-            statusEvent: 'delivery.status.updated',
+            leaveEvent: DELIVERY_SOCKET_EVENTS.leave,
+            riderLocationEvent: DELIVERY_SOCKET_EVENTS.locationInput,
+            locationEvent: DELIVERY_SOCKET_EVENTS.locationUpdated,
+            locationAcknowledgementEvent: DELIVERY_SOCKET_EVENTS.locationAcknowledged,
+            statusEvent: DELIVERY_SOCKET_EVENTS.statusUpdated,
           }
         : null,
     };
