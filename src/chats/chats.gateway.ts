@@ -40,6 +40,9 @@ export class ChatsGateway {
       secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
     }).sub;
   }
+  broadcastMessage(conversationId: number, message: unknown) {
+    this.server.to(`chat:${conversationId}`).emit(CHAT_SOCKET_EVENTS.messageCreated, message);
+  }
   @SubscribeMessage(CHAT_SOCKET_EVENTS.join) async join(
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { conversationId: number },
@@ -54,7 +57,7 @@ export class ChatsGateway {
     @MessageBody() data: { conversationId: number; body: string },
   ) {
     const message = await this.chats.send(this.userId(socket), data.conversationId, data.body);
-    this.server.to(`chat:${data.conversationId}`).emit(CHAT_SOCKET_EVENTS.messageCreated, message);
+    this.broadcastMessage(data.conversationId, message);
     return message;
   }
 }

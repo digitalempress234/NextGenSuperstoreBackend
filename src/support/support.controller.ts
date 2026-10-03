@@ -15,10 +15,18 @@ import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { Public } from '../auth/public.decorator';
-import { CreateSupportTicketDto, ReplySupportTicketDto, UpdateSupportTicketDto } from './support.dto';
+import {
+  CreateSupportTicketDto,
+  ReplySupportTicketDto,
+  SupportTicketListQueryDto,
+  UpdateSupportTicketDto,
+} from './dto/support.dto';
 import { AdminRoute } from '../auth/admin-route.decorator';
 import { AuthenticatedStaff, StaffJwtGuard } from '../staff/staff-jwt.guard';
 import { SupportService } from './support.service';
+import { OkExample } from '../common/api-docs';
+import { ADMIN_SUPPORT_TICKETS_EXAMPLE, SUPPORT_TICKETS_EXAMPLE } from '../common/docs-examples';
+import { PaginationDto } from '../common/dto/pagination.dto';
 @ApiTags('Customer Support')
 @Controller('support')
 export class SupportController {
@@ -34,8 +42,9 @@ export class SupportController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('support.tickets.view.own')
   @ApiOperation({ summary: 'Customer: list own support tickets' })
-  list(@CurrentUser('id') id: number) {
-    return this.support.list(id);
+  @OkExample(SUPPORT_TICKETS_EXAMPLE, 'Customer support tickets')
+  list(@CurrentUser('id') id: number, @Query() query: PaginationDto) {
+    return this.support.list(id, query.page, query.limit);
   }
   @Get('tickets/:id')
   @ApiCookieAuth('purse_access_token')
@@ -75,9 +84,10 @@ export class SupportAdminController {
   }
   @Get('tickets')
   @ApiOperation({ summary: 'Support/Operations: list customer support and dispute tickets' })
-  list(@Req() req: { staffUser: AuthenticatedStaff }, @Query('status') status?: string) {
+  @OkExample(ADMIN_SUPPORT_TICKETS_EXAMPLE, 'Paginated support-ticket directory')
+  list(@Req() req: { staffUser: AuthenticatedStaff }, @Query() query: SupportTicketListQueryDto) {
     this.authorize(req.staffUser);
-    return this.support.adminTickets(status);
+    return this.support.adminTickets(query.page, query.limit, query.status);
   }
   @Patch('tickets/:id')
   @ApiOperation({ summary: 'Support/Operations: update ticket status and priority' })

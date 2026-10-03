@@ -2,11 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-
-export class RiderWithdrawDto {
-  amount!: number;
-  mode!: 'MANUAL' | 'AUTO';
-}
+import type { RiderWithdrawDto } from './dto/rider-wallet.dto';
 
 @Injectable()
 export class RiderWalletService {

@@ -9,57 +9,17 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBody, ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsIn, IsNumber, IsString, Max, MaxLength, Min } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Equals, IsOptional } from 'class-validator';
 
 import { CurrentUser } from '../common/current-user.decorator';
-import { OkExample, RequireAuth, StandardErrors } from '../common/api-docs';
+import { CreatedExample, OkExample, RequireAuth, StandardErrors } from '../common/api-docs';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { PaymentsService } from './payments.service';
 import { money } from '../common/money';
-
-export class TopupWalletDto {
-  @ApiProperty({
-    minimum: 100,
-    maximum: 1000000,
-    example: 5000,
-    description: 'Amount in NGN to add to the wallet. Minimum ₦100, maximum ₦1,000,000.',
-  })
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(100)
-  @Max(1000000)
-  amount!: number;
-}
-
-export class WithdrawWalletDto {
-  @ApiProperty({ minimum: 100, example: 5000 })
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(100)
-  amount!: number;
-
-  @ApiProperty({ example: 'GTBank' }) @IsString() @MaxLength(100) bankName!: string;
-  @ApiProperty({ example: '0123456789' }) @IsString() @MaxLength(20) accountNumber!: string;
-  @ApiProperty({ example: 'Ada Okafor' }) @IsString() @MaxLength(191) accountName!: string;
-  @ApiProperty({ enum: ['MANUAL'], default: 'MANUAL' })
-  @IsIn(['MANUAL'])
-  mode = 'MANUAL' as const;
-}
-
-export class CreateWalletTransferAccountDto {
-  @ApiProperty({
-    example: true,
-    description: 'Explicit consent to share identity details with Paystack for account assignment.',
-  })
-  @Equals(true)
-  consent!: true;
-
-  @ApiPropertyOptional({ example: 'titan-paystack' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  preferredBank?: string;
-}
+import {
+  CreateWalletTransferAccountDto,
+  TopupWalletDto,
+  WithdrawWalletDto,
+} from './dto/wallet.dto';
 
 /**
  * Customer Wallet endpoints
@@ -104,7 +64,7 @@ export class WalletController {
       '**Eligible roles**: `CUSTOMER`, `VENDOR` (any authenticated user with this permission)',
   })
   @ApiBody({ type: TopupWalletDto })
-  @OkExample({
+  @CreatedExample({
     id: 55,
     transactionRef: 'TOPUP-1001-550e8400-e29b-41d4-a716-446655440000',
     paymentUrl: 'https://checkout.paystack.com/abc123def456',
@@ -126,7 +86,7 @@ export class WalletController {
       'Creates an exact-amount temporary account. No BVN or personal bank-account details are collected. Credit occurs only after Paystack verification.',
   })
   @ApiBody({ type: TopupWalletDto })
-  @OkExample({
+  @CreatedExample({
     id: 56,
     transactionRef: 'TOPUP-TRANSFER-1001-550e8400-e29b-41d4-a716-446655440000',
     amount: '5000.00',
@@ -272,6 +232,19 @@ export class WalletController {
   @Post('withdraw')
   @RequireAuth([], ['CUSTOMER', 'VENDOR'])
   @ApiOperation({ summary: 'Request a withdrawal from the customer wallet' })
+  @CreatedExample(
+    {
+      id: 61,
+      amount: '5000.00',
+      status: 'PENDING',
+      mode: 'MANUAL',
+      bankName: 'Guaranty Trust Bank',
+      accountNumber: '******6789',
+      accountName: 'Ada Okafor',
+      createdAt: '2026-10-03T09:30:00.000Z',
+    },
+    'Pending wallet withdrawal request',
+  )
   @StandardErrors()
   withdraw(@CurrentUser('id') userId: number, @Body() dto: WithdrawWalletDto) {
     return this.payments.requestWalletWithdrawal(userId, dto);

@@ -14,6 +14,7 @@ import {
   MintKycSessionDto,
   ReplaceVehicleDocumentDto,
   UpdateRiderProfileDto,
+  UpdateRiderSettingsDto,
   UpdateVehicleDto,
   VerifyGuarantorDocumentDto,
   VerifyDriverLicenseDto,
@@ -21,7 +22,9 @@ import {
 } from './dto/rider.dto';
 import { RidersService } from './riders.service';
 import { BankResolverService } from './bank-resolver.service';
-import { RiderWalletService, RiderWithdrawDto } from './rider-wallet.service';
+import { RiderWalletService } from './rider-wallet.service';
+import { RiderWithdrawDto } from './dto/rider-wallet.dto';
+import { RIDER_INBOX_EXAMPLE, RIDER_SETTINGS_EXAMPLE } from '../common/docs-examples';
 
 @ApiTags('Riders')
 @ApiCookieAuth('purse_access_token')
@@ -121,6 +124,7 @@ export class RidersController {
 
   @Get('inbox')
   @ApiOperation({ summary: 'Logistics/rider: get paginated operational inbox' })
+  @OkExample(RIDER_INBOX_EXAMPLE, 'Paginated rider operational inbox')
   inbox(
     @CurrentUser('id') userId: number,
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
@@ -131,8 +135,17 @@ export class RidersController {
 
   @Get('settings')
   @ApiOperation({ summary: 'Logistics/rider: get profile and notification settings' })
+  @OkExample(RIDER_SETTINGS_EXAMPLE, 'Rider profile and notification settings')
   settings(@CurrentUser('id') userId: number) {
     return this.ridersService.settings(userId);
+  }
+
+  @Patch('settings')
+  @ApiOperation({ summary: 'Logistics/rider: update profile and notification settings' })
+  @OkExample(RIDER_SETTINGS_EXAMPLE, 'Updated rider profile and notification settings')
+  @StandardErrors()
+  updateSettings(@CurrentUser('id') userId: number, @Body() dto: UpdateRiderSettingsDto) {
+    return this.ridersService.updateSettings(userId, dto);
   }
 
   @Post('profile')

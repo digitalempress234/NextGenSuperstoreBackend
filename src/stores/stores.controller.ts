@@ -12,9 +12,19 @@ import {
   UpsertStoreProductDto,
 } from './dto/store.dto';
 import { StoreCacService } from './store-cac.service';
-import { StoreWalletService, StoreWithdrawDto } from './store-wallet.service';
+import { StoreWalletService } from './store-wallet.service';
+import { StoreWithdrawDto } from './dto/store-wallet.dto';
 import { StoresService } from './stores.service';
 import { StoreCampaignDto, StoreOrderQueryDto } from './dto/store-operations.dto';
+import {
+  STORE_CAMPAIGNS_EXAMPLE,
+  STORE_COMPARE_DEALS_EXAMPLE,
+  STORE_INBOX_EXAMPLE,
+  STORE_ORDERS_EXAMPLE,
+  STORE_RIDERS_EXAMPLE,
+  STORE_SETTINGS_EXAMPLE,
+} from '../common/docs-examples';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('Stores')
 @Controller('stores')
@@ -47,7 +57,12 @@ export class StoresController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Vendor/store agent: list store orders' })
-  orders(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Query() query: StoreOrderQueryDto) {
+  @OkExample(STORE_ORDERS_EXAMPLE, 'Paginated store orders')
+  orders(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Query() query: StoreOrderQueryDto,
+  ) {
     return this.storesService.orders(userId, storeId, query);
   }
 
@@ -55,7 +70,11 @@ export class StoresController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Vendor/store agent: get a store order detail' })
-  order(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Param('orderId', ParseIntPipe) orderId: number) {
+  order(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Param('orderId', ParseIntPipe) orderId: number,
+  ) {
     return this.storesService.order(userId, storeId, orderId);
   }
 
@@ -63,15 +82,24 @@ export class StoresController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('stores.view')
   @ApiOperation({ summary: 'Vendor: list store reward campaigns' })
-  campaigns(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
-    return this.storesService.campaigns(userId, storeId);
+  @OkExample(STORE_CAMPAIGNS_EXAMPLE, 'Store reward campaigns')
+  campaigns(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Query() query: PaginationDto,
+  ) {
+    return this.storesService.campaigns(userId, storeId, query.page, query.limit);
   }
 
   @Post(':id/campaigns')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('stores.update')
   @ApiOperation({ summary: 'Vendor: create a store reward campaign' })
-  createCampaign(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Body() dto: StoreCampaignDto) {
+  createCampaign(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Body() dto: StoreCampaignDto,
+  ) {
     return this.storesService.createCampaign(userId, storeId, dto);
   }
 
@@ -79,7 +107,12 @@ export class StoresController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('stores.update')
   @ApiOperation({ summary: 'Vendor: update a store reward campaign' })
-  updateCampaign(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number, @Param('campaignId') campaignId: string, @Body() dto: StoreCampaignDto) {
+  updateCampaign(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Param('campaignId') campaignId: string,
+    @Body() dto: StoreCampaignDto,
+  ) {
     return this.storesService.updateCampaign(userId, storeId, campaignId, dto);
   }
 
@@ -87,32 +120,62 @@ export class StoresController {
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('chats.use')
   @ApiOperation({ summary: 'Vendor/store agent: list the store inbox' })
-  inbox(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
-    return this.storesService.inbox(userId, storeId);
+  @OkExample(STORE_INBOX_EXAMPLE, 'Store inbox conversations')
+  inbox(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Query() query: PaginationDto,
+  ) {
+    return this.storesService.inbox(userId, storeId, query.page, query.limit);
   }
 
   @Get(':id/riders')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Vendor: list riders serving this store' })
-  riders(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
-    return this.storesService.riders(userId, storeId);
+  @OkExample(STORE_RIDERS_EXAMPLE, 'Riders serving the store')
+  riders(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Query() query: PaginationDto,
+  ) {
+    return this.storesService.riders(userId, storeId, query.page, query.limit);
   }
 
   @Get(':id/compare-deals')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('stores.view')
   @ApiOperation({ summary: 'Vendor: compare store offers with competing active offers' })
-  compareDeals(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
-    return this.storesService.compareDeals(userId, storeId);
+  @OkExample(STORE_COMPARE_DEALS_EXAMPLE, 'Store and competitor deal comparison')
+  compareDeals(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Query() query: PaginationDto,
+  ) {
+    return this.storesService.compareDeals(userId, storeId, query.page, query.limit);
   }
 
   @Get(':id/settings')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('stores.view')
   @ApiOperation({ summary: 'Vendor/store agent: get store settings' })
+  @OkExample(STORE_SETTINGS_EXAMPLE, 'Store settings')
   settings(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
     return this.storesService.settings(userId, storeId);
+  }
+
+  @Patch(':id/settings')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.update')
+  @ApiOperation({ summary: 'Vendor: update store settings' })
+  @OkExample(STORE_SETTINGS_EXAMPLE, 'Updated store settings')
+  @StandardErrors()
+  updateSettings(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Body() dto: UpdateStoreDto,
+  ) {
+    return this.storesService.update(userId, storeId, dto);
   }
 
   @Get('mine')
@@ -191,8 +254,6 @@ export class StoresController {
     return this.storesService.addProduct(userId, storeId, dto);
   }
 
-  
-
   @Post(':id/cac')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('stores.update')
@@ -235,8 +296,6 @@ export class StoresController {
   getCacStatus(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
     return this.storeCacService.getStatus(userId, storeId);
   }
-
-  
 
   @Get(':id/wallet')
   @ApiCookieAuth('purse_access_token')

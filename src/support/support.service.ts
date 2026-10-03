@@ -2,8 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSupportTicketDto } from './support.dto';
-import { UpdateSupportTicketDto } from './support.dto';
+import { CreateSupportTicketDto, UpdateSupportTicketDto } from './dto/support.dto';
 @Injectable()
 export class SupportService {
   constructor(private readonly prisma: PrismaService) {}
@@ -22,11 +21,18 @@ export class SupportService {
       },
     });
   }
-  list(userId: number) {
-    return this.prisma.supportTicket.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
+  async list(userId: number, page = 1, limit = 15) {
+    const where = { userId };
+    const [items, total] = await Promise.all([
+      this.prisma.supportTicket.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.supportTicket.count({ where }),
+    ]);
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
   }
   async one(userId: number, id: number) {
     const ticket = await this.prisma.supportTicket.findFirst({
@@ -52,12 +58,19 @@ export class SupportService {
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     });
   }
-  adminTickets(status?: string) {
-    return this.prisma.supportTicket.findMany({
-      where: { status: status || undefined },
-      include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+  async adminTickets(page = 1, limit = 15, status?: string) {
+    const where = { status: status || undefined };
+    const [items, total] = await Promise.all([
+      this.prisma.supportTicket.findMany({
+        where,
+        include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.supportTicket.count({ where }),
+    ]);
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
   }
   updateTicket(id: number, dto: UpdateSupportTicketDto) {
     return this.prisma.supportTicket.update({ where: { id }, data: dto });

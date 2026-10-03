@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { OrderStatus } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateStoreDto, UpdateStoreDto, UpsertStoreProductDto } from './dto/store.dto';
@@ -7,6 +8,10 @@ import { StoreCampaignDto, StoreOrderQueryDto } from './dto/store-operations.dto
 @Injectable()
 export class StoresService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private paginated<T>(items: T[], total: number, page: number, limit: number) {
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
+  }
 
   list() {
     return this.prisma.store.findMany({
@@ -42,7 +47,7 @@ export class StoresService {
 
   async orders(userId: number, storeId: number, query: StoreOrderQueryDto) {
     await this.assertAccess(userId, storeId);
-    const where = { storeId, currentStatus: query.status as any };
+    const where = { storeId, currentStatus: query.status as OrderStatus };
     if (!query.status) delete (where as { currentStatus?: unknown }).currentStatus;
     const [items, total] = await Promise.all([
       this.prisma.order.findMany({
@@ -54,72 +59,159 @@ export class StoresService {
       }),
       this.prisma.order.count({ where }),
     ]);
-    return { items, total, page: query.page, limit: Math.min(query.limit, 100), pages: Math.ceil(total / Math.min(query.limit, 100)) };
+    return {
+      items,
+      total,
+      page: query.page,
+      limit: Math.min(query.limit, 100),
+      pages: Math.ceil(total / Math.min(query.limit, 100)),
+    };
   }
 
   async order(userId: number, storeId: number, orderId: number) {
     await this.assertAccess(userId, storeId);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, storeId },
-      include: { items: true, delivery: true, pickup: true, payment: true, statusHistory: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        items: true,
+        delivery: true,
+        pickup: true,
+        payment: true,
+        statusHistory: { orderBy: { createdAt: 'asc' } },
+      },
     });
     if (!order) throw new NotFoundException('Order not found.');
     return order;
   }
 
-  async campaigns(userId: number, storeId: number) {
+  async campaigns(userId: number, storeId: number, page = 1, limit = 15) {
     await this.assertAccess(userId, storeId);
-    return this.prisma.rewardVoucher.findMany({ where: { storeId }, orderBy: { createdAt: 'desc' } });
+    const where = { storeId };
+    const [items, total] = await Promise.all([
+      this.prisma.rewardVoucher.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.rewardVoucher.count({ where }),
+    ]);
+    return this.paginated(items, total, page, limit);
   }
 
   async createCampaign(userId: number, storeId: number, dto: StoreCampaignDto) {
     await this.assertAccess(userId, storeId);
     return this.prisma.rewardVoucher.create({
-      data: { ...dto, code: dto.code.trim().toUpperCase(), storeId, startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined },
+      data: {
+        ...dto,
+        code: dto.code.trim().toUpperCase(),
+        storeId,
+        startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      },
     });
   }
 
   async updateCampaign(userId: number, storeId: number, campaignId: string, dto: StoreCampaignDto) {
     await this.assertAccess(userId, storeId);
-    const existing = await this.prisma.rewardVoucher.findFirst({ where: { id: campaignId, storeId } });
+    const existing = await this.prisma.rewardVoucher.findFirst({
+      where: { id: campaignId, storeId },
+    });
     if (!existing) throw new NotFoundException('Campaign not found.');
     return this.prisma.rewardVoucher.update({
       where: { id: campaignId },
-      data: { ...dto, code: dto.code.trim().toUpperCase(), startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined, expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined },
+      data: {
+        ...dto,
+        code: dto.code.trim().toUpperCase(),
+        startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+      },
     });
   }
 
-  async inbox(userId: number, storeId: number) {
+  async inbox(userId: number, storeId: number, page = 1, limit = 15) {
     await this.assertAccess(userId, storeId);
-    return this.prisma.chatConversation.findMany({
-      where: { storeId },
-      include: { participant: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } }, order: { select: { id: true, orderNumber: true } }, messages: { take: 1, orderBy: { createdAt: 'desc' } } },
-      orderBy: { lastMessageAt: 'desc' },
-    });
+    const where = { storeId };
+    const [items, total] = await Promise.all([
+      this.prisma.chatConversation.findMany({
+        where,
+        include: {
+          participant: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+          order: { select: { id: true, orderNumber: true } },
+          messages: { take: 1, orderBy: { createdAt: 'desc' } },
+        },
+        orderBy: { lastMessageAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.chatConversation.count({ where }),
+    ]);
+    return this.paginated(items, total, page, limit);
   }
 
-  async riders(userId: number, storeId: number) {
+  async riders(userId: number, storeId: number, page = 1, limit = 15) {
     await this.assertAccess(userId, storeId);
-    return this.prisma.riderProfile.findMany({
-      where: { user: { riderDeliveries: { some: { order: { storeId } } } } },
-      include: { user: { select: { id: true, firstName: true, lastName: true, phoneNumber: true, avatarUrl: true } }, vehicles: true },
-      orderBy: { updatedAt: 'desc' },
-    });
+    const where = { user: { riderDeliveries: { some: { order: { storeId } } } } };
+    const [items, total] = await Promise.all([
+      this.prisma.riderProfile.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phoneNumber: true,
+              avatarUrl: true,
+            },
+          },
+          vehicles: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.riderProfile.count({ where }),
+    ]);
+    return this.paginated(items, total, page, limit);
   }
 
-  async compareDeals(userId: number, storeId: number) {
+  async compareDeals(userId: number, storeId: number, page = 1, limit = 15) {
     await this.assertAccess(userId, storeId);
-    const offers = await this.prisma.storeProduct.findMany({
-      where: { storeId, isActive: true },
-      include: { product: { include: { offers: { where: { isActive: true, availability: true }, include: { store: { select: { id: true, storeName: true } } }, orderBy: { price: 'asc' } } } } },
-      orderBy: { updatedAt: 'desc' },
-    });
-    return offers.map((offer) => ({ storeOffer: offer, competingOffers: offer.product.offers.filter((item) => item.storeId !== storeId) }));
+    const where = { storeId, isActive: true };
+    const [offers, total] = await Promise.all([
+      this.prisma.storeProduct.findMany({
+        where,
+        include: {
+          product: {
+            include: {
+              offers: {
+                where: { isActive: true, availability: true },
+                include: { store: { select: { id: true, storeName: true } } },
+                orderBy: { price: 'asc' },
+              },
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.storeProduct.count({ where }),
+    ]);
+    const items = offers.map((offer) => ({
+      storeOffer: offer,
+      competingOffers: offer.product.offers.filter((item) => item.storeId !== storeId),
+    }));
+    return this.paginated(items, total, page, limit);
   }
 
   async settings(userId: number, storeId: number) {
     await this.assertAccess(userId, storeId);
-    return this.prisma.store.findUnique({ where: { id: storeId }, include: { category: true, images: { orderBy: { sortOrder: 'asc' } } } });
+    return this.prisma.store.findUnique({
+      where: { id: storeId },
+      include: { category: true, images: { orderBy: { sortOrder: 'asc' } } },
+    });
   }
 
   async overview(userId: number, storeId: number) {

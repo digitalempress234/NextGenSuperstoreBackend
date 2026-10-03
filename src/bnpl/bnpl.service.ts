@@ -14,11 +14,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CartService } from '../cart/cart.service';
 import { CheckoutService, jsonSnapshot, quoteFingerprint } from '../checkout/checkout.service';
 import { CreateCheckoutDto } from '../checkout/dto/checkout.dto';
-import { BnplPlanDto, UpdateBnplPlanDto } from '../checkout/checkout-settings.dto';
+import { BnplPlanDto, UpdateBnplPlanDto } from '../checkout/dto/checkout-settings.dto';
 import { PaymentsService } from '../payments/payments.service';
 import { AuthenticatedStaff } from '../staff/staff-jwt.guard';
 import { money } from '../common/money';
-import { ApplyBnplDto, PayBnplRepaymentDto, ReviewBnplDto } from './bnpl.dto';
+import { ApplyBnplDto, PayBnplRepaymentDto, ReviewBnplDto } from './dto/bnpl.dto';
 
 export function installmentTerms(
   principal: Prisma.Decimal.Value,

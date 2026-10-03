@@ -2,20 +2,11 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-
-export class StoreWithdrawDto {
-  amount!: number;
-  bankName!: string;
-  accountNumber!: string;
-  accountName!: string;
-  mode!: 'MANUAL' | 'AUTO';
-}
+import type { StoreWithdrawDto } from './dto/store-wallet.dto';
 
 @Injectable()
 export class StoreWalletService {
   constructor(private readonly prisma: PrismaService) {}
-
-  
 
   async getWallet(userId: number, storeId: number) {
     await this.assertOwner(userId, storeId);
@@ -32,8 +23,6 @@ export class StoreWalletService {
 
     return wallet ?? { balance: 0, lockedBalance: 0 };
   }
-
-  
 
   async getTransactions(userId: number, storeId: number, page = 1, limit = 15) {
     await this.assertOwner(userId, storeId);
@@ -63,8 +52,6 @@ export class StoreWalletService {
     return { items, total, page, limit };
   }
 
-  
-
   async requestWithdrawal(userId: number, storeId: number, dto: StoreWithdrawDto) {
     await this.assertOwner(userId, storeId);
 
@@ -82,7 +69,6 @@ export class StoreWalletService {
     const ref = `SW-${storeId}-${Date.now()}`;
 
     const withdrawal = await this.prisma.$transaction(async (tx) => {
-      
       await tx.storeWallet.update({
         where: { id: wallet.id },
         data: { balance: { decrement: new Prisma.Decimal(dto.amount) } },
@@ -112,12 +98,8 @@ export class StoreWalletService {
       });
     });
 
-    
-
     return withdrawal;
   }
-
-  
 
   async getWithdrawals(userId: number, storeId: number) {
     await this.assertOwner(userId, storeId);
@@ -140,8 +122,6 @@ export class StoreWalletService {
       },
     });
   }
-
-  
 
   private async assertOwner(userId: number, storeId: number) {
     const store = await this.prisma.store.findFirst({

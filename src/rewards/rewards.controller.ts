@@ -14,10 +14,13 @@ import {
 import { ApiCookieAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
-import { ApplyVoucherDto, RedeemCashbackDto, SaveVoucherDto } from './rewards.dto';
+import { ApplyVoucherDto, RedeemCashbackDto, SaveVoucherDto } from './dto/rewards.dto';
 import { AdminRoute } from '../auth/admin-route.decorator';
 import { AuthenticatedStaff, StaffJwtGuard } from '../staff/staff-jwt.guard';
 import { RewardsService } from './rewards.service';
+import { OkExample } from '../common/api-docs';
+import { REWARD_SUMMARY_EXAMPLE, REWARD_VOUCHERS_EXAMPLE } from '../common/docs-examples';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('Customer Rewards')
 @ApiCookieAuth('purse_access_token')
@@ -27,6 +30,7 @@ export class RewardsController {
   constructor(private readonly rewards: RewardsService) {}
   @Get('summary')
   @ApiOperation({ summary: 'Customer: get reward balances and active voucher count' })
+  @OkExample(REWARD_SUMMARY_EXAMPLE, 'Customer rewards summary')
   summary(@CurrentUser('id') id: number) {
     return this.rewards.summary(id);
   }
@@ -49,8 +53,9 @@ export class RewardsController {
   }
   @Get('vouchers')
   @ApiOperation({ summary: 'Customer: list available and owned vouchers' })
-  vouchers(@CurrentUser('id') id: number) {
-    return this.rewards.vouchers(id);
+  @OkExample(REWARD_VOUCHERS_EXAMPLE, 'Paginated available and owned vouchers')
+  vouchers(@CurrentUser('id') id: number, @Query() query: PaginationDto) {
+    return this.rewards.vouchers(id, query.page, query.limit);
   }
   @Post('vouchers/:id/claim')
   @RequirePermissions('rewards.redeem')

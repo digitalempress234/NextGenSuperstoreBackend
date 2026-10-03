@@ -5,7 +5,7 @@ import {
   CheckoutSettingsDto,
   PickupStationDto,
   UpdatePickupStationDto,
-} from './checkout-settings.dto';
+} from './dto/checkout-settings.dto';
 
 @Injectable()
 export class CheckoutSettingsService {

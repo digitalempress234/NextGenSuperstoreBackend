@@ -3,21 +3,28 @@ import { PrismaService } from '../prisma/prisma.service';
 @Injectable()
 export class ChatsService {
   constructor(private readonly prisma: PrismaService) {}
-  list(userId: number) {
-    return this.prisma.chatConversation.findMany({
-      where: {
-        OR: [
-          { participantId: userId },
-          { store: { OR: [{ ownerUserId: userId }, { members: { some: { userId } } }] } },
-        ],
-      },
-      include: {
-        store: { select: { id: true, storeName: true, imageUrl: true } },
-        order: { select: { id: true, orderNumber: true } },
-        messages: { take: 1, orderBy: { createdAt: 'desc' } },
-      },
-      orderBy: { lastMessageAt: 'desc' },
-    });
+  async list(userId: number, page = 1, limit = 15) {
+    const where = {
+      OR: [
+        { participantId: userId },
+        { store: { OR: [{ ownerUserId: userId }, { members: { some: { userId } } }] } },
+      ],
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.chatConversation.findMany({
+        where,
+        include: {
+          store: { select: { id: true, storeName: true, imageUrl: true } },
+          order: { select: { id: true, orderNumber: true } },
+          messages: { take: 1, orderBy: { createdAt: 'desc' } },
+        },
+        orderBy: { lastMessageAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.chatConversation.count({ where }),
+    ]);
+    return { items, total, page, limit, pages: Math.ceil(total / limit) };
   }
   async create(userId: number, storeId: number, orderId?: number) {
     const store = await this.prisma.store.findFirst({ where: { id: storeId, isActive: true } });

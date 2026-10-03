@@ -3,7 +3,7 @@ import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample } from '../common/api-docs';
-import { ScanItemDto, ScanOrderQrDto } from './scanning.dto';
+import { ScanItemDto, ScanOrderQrDto } from './dto/scanning.dto';
 import { ScanningService } from './scanning.service';
 
 @ApiTags('Order QR')

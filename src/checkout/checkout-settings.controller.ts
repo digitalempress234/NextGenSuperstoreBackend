@@ -19,7 +19,7 @@ import {
   CheckoutSettingsDto,
   PickupStationDto,
   UpdatePickupStationDto,
-} from './checkout-settings.dto';
+} from './dto/checkout-settings.dto';
 
 export function assertCheckoutStaff(staff: AuthenticatedStaff, roles: string[]) {
   if (!staff || !['SUPER_ADMIN', ...roles].includes(staff.role))

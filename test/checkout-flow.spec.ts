@@ -16,7 +16,7 @@ import type { PaystackClient } from '../src/payments/paystack.client';
 import type { PrismaService } from '../src/prisma/prisma.service';
 import type { SettlementsService } from '../src/settlements/settlements.service';
 import { BnplService, installmentTerms } from '../src/bnpl/bnpl.service';
-import { ApplyBnplDto } from '../src/bnpl/bnpl.dto';
+import { ApplyBnplDto } from '../src/bnpl/dto/bnpl.dto';
 import { kobo } from '../src/common/money';
 import { verifyPaystackWebhook } from '../src/payments/paystack-webhook';
 import { createHmac } from 'crypto';

@@ -14,6 +14,7 @@ import {
   CreateVehicleDto,
   MintKycSessionDto,
   UpdateRiderProfileDto,
+  UpdateRiderSettingsDto,
   UpdateVehicleDto,
   ReplaceVehicleDocumentDto,
   VerifyGuarantorDocumentDto,
@@ -145,6 +146,19 @@ export class RidersService {
       this.notifications.preferences(userId),
     ]);
     return { profile, notificationPreferences };
+  }
+
+  async updateSettings(userId: number, dto: UpdateRiderSettingsDto) {
+    const { notificationPreferences, ...profile } = dto;
+    if (Object.keys(profile).length) await this.updateProfile(userId, profile);
+    if (notificationPreferences?.length) {
+      await Promise.all(
+        notificationPreferences.map((preference) =>
+          this.notifications.updatePreference(userId, preference),
+        ),
+      );
+    }
+    return this.settings(userId);
   }
 
   async updateProfile(userId: number, dto: UpdateRiderProfileDto) {

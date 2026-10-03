@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { money } from '../common/money';
-import type { SaveVoucherDto } from './rewards.dto';
+import type { SaveVoucherDto } from './dto/rewards.dto';
 
 @Injectable()
 export class RewardsService {
@@ -128,19 +128,26 @@ export class RewardsService {
     });
   }
 
-  async vouchers(userId: number) {
+  async vouchers(userId: number, page = 1, limit = 15) {
     const now = new Date();
-    const [definitions, owned] = await Promise.all([
+    const where = {
+      isActive: true,
+      startsAt: { lte: now },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    };
+    const [definitions, total] = await Promise.all([
       this.prisma.rewardVoucher.findMany({
-        where: {
-          isActive: true,
-          startsAt: { lte: now },
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-        },
+        where,
         include: { store: { select: { storeName: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
       }),
-      this.prisma.userVoucher.findMany({ where: { userId } }),
+      this.prisma.rewardVoucher.count({ where }),
     ]);
+    const owned = await this.prisma.userVoucher.findMany({
+      where: { userId, voucherId: { in: definitions.map((voucher) => voucher.id) } },
+    });
     const status = new Map(owned.map((item) => [item.voucherId, item.status.toLowerCase()]));
     return {
       vouchers: definitions.map((v) => ({
@@ -162,6 +169,10 @@ export class RewardsService {
         ].filter(Boolean),
         expiresAt: v.expiresAt,
       })),
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
     };
   }
 

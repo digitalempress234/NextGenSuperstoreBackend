@@ -11,7 +11,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, OmitType } from '@nestjs/swagger';
-import { CreateCheckoutDto } from '../checkout/dto/checkout.dto';
+import { CreateCheckoutDto } from '../../checkout/dto/checkout.dto';
 
 export class BnplPlansQuery {
   @ApiProperty({ enum: ['nextgen_purse', 'easybuy', 'wallet_bnpl'] })

@@ -31,10 +31,10 @@ import { CreatedExample, OkExample, StandardErrors } from '../common/api-docs';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { StaffJwtGuard, AuthenticatedStaff } from '../staff/staff-jwt.guard';
 import { assertCheckoutStaff } from '../checkout/checkout-settings.controller';
-import { BnplPlanDto, UpdateBnplPlanDto } from '../checkout/checkout-settings.dto';
-import { ApplyBnplDto, BnplPlansQuery, ConfirmBnplDto, ReviewBnplDto } from './bnpl.dto';
+import { BnplPlanDto, UpdateBnplPlanDto } from '../checkout/dto/checkout-settings.dto';
+import { ApplyBnplDto, BnplPlansQuery, ConfirmBnplDto, ReviewBnplDto } from './dto/bnpl.dto';
 import { BnplService } from './bnpl.service';
-import { PayBnplRepaymentDto } from './bnpl.dto';
+import { PayBnplRepaymentDto } from './dto/bnpl.dto';
 
 @ApiTags('BNPL')
 @ApiCookieAuth('purse_access_token')

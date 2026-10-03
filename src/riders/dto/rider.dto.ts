@@ -6,11 +6,14 @@ import {
   IsDateString,
   IsEnum,
   IsIn,
+  IsArray,
   IsInt,
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { UpdateNotificationPreferenceDto } from '../../notifications/dto/notification.dto';
 
 export class UpdateRiderProfileDto {
   @ApiPropertyOptional({ example: 'Ikeja / Allen Avenue' })
@@ -57,6 +60,18 @@ export class UpdateRiderProfileDto {
   @IsOptional()
   @IsString()
   nextOfKinPhone?: string;
+}
+
+export class UpdateRiderSettingsDto extends UpdateRiderProfileDto {
+  @ApiPropertyOptional({
+    type: () => [UpdateNotificationPreferenceDto],
+    example: [{ type: 'DELIVERY_UPDATE', inApp: true, email: true }],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateNotificationPreferenceDto)
+  notificationPreferences?: UpdateNotificationPreferenceDto[];
 }
 
 export class CreateRiderDocumentDto {
