@@ -303,6 +303,7 @@ export class StaffService {
   }
 
   async findAll(page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       this.prisma.staffUser.findMany({

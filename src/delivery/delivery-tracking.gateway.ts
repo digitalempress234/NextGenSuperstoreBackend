@@ -25,6 +25,7 @@ import {
 interface SocketUser {
   id: number;
   email: string;
+  roles: string[];
 }
 
 export { extractSocketAccessToken as extractDeliverySocketAccessToken } from '../common/socket-auth';
@@ -76,7 +77,12 @@ export class DeliveryTrackingGateway
 
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
-        select: { id: true, email: true, status: true },
+        select: {
+          id: true,
+          email: true,
+          status: true,
+          roles: { select: { role: { select: { name: true } } } },
+        },
       });
 
       if (!user || user.status !== 'ACTIVE') {
@@ -84,8 +90,10 @@ export class DeliveryTrackingGateway
         return;
       }
 
-      socket.data.user = { id: user.id, email: user.email } satisfies SocketUser;
+      const roles = user.roles.map((assignment) => assignment.role.name);
+      socket.data.user = { id: user.id, email: user.email, roles } satisfies SocketUser;
       await socket.join(`user:${user.id}`);
+      if (roles.includes('RIDER')) await socket.join('rider-job-board');
     } catch {
       socket.disconnect(true);
     }
@@ -110,6 +118,10 @@ export class DeliveryTrackingGateway
     this.server
       .to(`delivery:${event.deliveryId}`)
       .emit(DELIVERY_SOCKET_EVENTS.statusUpdated, event);
+  }
+
+  broadcastJobClaimed(event: { deliveryId: number; orderId: number; claimedAt: string }): void {
+    this.server.to('rider-job-board').emit(DELIVERY_SOCKET_EVENTS.jobClaimed, event);
   }
 
   handleDisconnect(): void {}

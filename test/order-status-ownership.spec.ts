@@ -89,12 +89,84 @@ describe('order status ownership boundaries', () => {
     );
   });
 
+  it('persists arrival at the customer for app state restoration', async () => {
+    const tx = {
+      delivery: {
+        update: jest.fn().mockImplementation(({ data }) => ({ id: 5, ...data })),
+      },
+      deliveryStatusUpdate: { create: jest.fn() },
+      order: { update: jest.fn() },
+      orderStatusHistory: { create: jest.fn() },
+    };
+    const prisma = {
+      delivery: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 5,
+          orderId: 1,
+          riderId: 20,
+          status: 'OUT_FOR_DELIVERY',
+          order: { id: 1, currentStatus: 'OUT_FOR_DELIVERY' },
+        }),
+      },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const gateway = { broadcastStatus: jest.fn() };
+    const service = new DeliveryService(
+      prisma as never,
+      {} as never,
+      gateway as never,
+      {} as never,
+    );
+
+    const result = await service.updateStatus(20, 5, 'ARRIVED_AT_CUSTOMER');
+
+    expect(tx.delivery.update).toHaveBeenCalledWith({
+      where: { id: 5 },
+      data: {
+        status: 'ARRIVED_AT_CUSTOMER',
+        arrivedAt: expect.any(Date),
+      },
+    });
+    expect(tx.deliveryStatusUpdate.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        deliveryId: 5,
+        status: 'ARRIVED_AT_CUSTOMER',
+      }),
+    });
+    expect(tx.order.update).not.toHaveBeenCalled();
+    expect(gateway.broadcastStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryId: 5, status: 'ARRIVED_AT_CUSTOMER' }),
+    );
+    expect(result).toEqual(expect.objectContaining({ status: 'ARRIVED_AT_CUSTOMER' }));
+  });
+
   it('records an audited staff intervention', async () => {
     const tx = {
       order: {
-        findUnique: jest.fn().mockResolvedValue({ id: 1, currentStatus: 'OUT_FOR_DELIVERY' }),
-        update: jest.fn().mockResolvedValue({ id: 1, currentStatus: 'DELIVERED' }),
-        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 1, currentStatus: 'DELIVERED' }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({
+            id: 1,
+            userId: 7,
+            orderNumber: 'PUR-1',
+            currentStatus: 'OUT_FOR_DELIVERY',
+          }),
+        update: jest
+          .fn()
+          .mockResolvedValue({
+            id: 1,
+            userId: 7,
+            orderNumber: 'PUR-1',
+            currentStatus: 'DELIVERED',
+          }),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({
+            id: 1,
+            userId: 7,
+            orderNumber: 'PUR-1',
+            currentStatus: 'DELIVERED',
+          }),
       },
       orderStatusHistory: { create: jest.fn() },
       auditLog: { create: jest.fn() },
@@ -102,7 +174,8 @@ describe('order status ownership boundaries', () => {
     const prisma = {
       $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     };
-    const service = new AdminService(prisma as never, {} as never);
+    const notifications = { notifyUser: jest.fn() };
+    const service = new AdminService(prisma as never, notifications as never);
 
     await service.updateOrderStatus(1, 99, 'DELIVERED', 'Evidence reviewed');
 
@@ -114,6 +187,9 @@ describe('order status ownership boundaries', () => {
           changes: expect.objectContaining({ reason: 'Evidence reviewed' }),
         }),
       }),
+    );
+    expect(notifications.notifyUser).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 7, type: 'ORDER_STATUS_UPDATE' }),
     );
   });
 });

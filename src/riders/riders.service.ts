@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { BankResolverService } from './bank-resolver.service';
 import {
+  CompleteLivenessSessionDto,
   CreateBankAccountDto,
   CreateGuarantorDocumentDto,
   CreateGuarantorDto,
@@ -53,7 +54,7 @@ export class RidersService {
             { key: 'liveness', label: 'Start liveness-only verification', required: true },
             {
               key: 'driverLicence',
-              label: 'Submit licence number for automatic verification',
+              label: 'Upload a clear driver licence image',
               required: true,
             },
             { key: 'motorcycle', label: 'Motorcycle, plate, and photograph', required: true },
@@ -74,7 +75,7 @@ export class RidersService {
             { key: 'approvedLiveness', label: 'Approved liveness', required: true },
             {
               key: 'riderLicence',
-              label: 'Provider-verified driving/rider licence',
+              label: 'Admin-approved driver licence image',
               required: true,
             },
             {
@@ -137,6 +138,7 @@ export class RidersService {
   }
 
   inbox(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     return this.notifications.list(userId, { page, limit });
   }
 
@@ -159,6 +161,97 @@ export class RidersService {
       );
     }
     return this.settings(userId);
+  }
+
+  async updateAvailability(userId: number, isOnline: boolean) {
+    const profile = await this.getProfile(userId);
+    if (!profile) throw new NotFoundException('Rider profile was not found.');
+
+    if (isOnline && !profile.canAcceptDeliveries) {
+      throw new BadRequestException({
+        message: 'Complete operational approval before going online.',
+        missingOperationalRequirements: profile.missingOperationalRequirements,
+      });
+    }
+    if (isOnline) this.ensureFreshJobLocation(profile);
+
+    const updated = await this.prisma.riderProfile.update({
+      where: { userId },
+      data: { isOnline },
+      select: { id: true, userId: true, onboardingStatus: true, isOnline: true },
+    });
+
+    return {
+      ...updated,
+      canBrowseAvailableDeliveries: updated.onboardingStatus === 'APPROVED' && updated.isOnline,
+    };
+  }
+
+  async updateCurrentLocation(
+    userId: number,
+    input: { latitude: number; longitude: number; accuracyM?: number },
+  ) {
+    const profile = await this.prisma.riderProfile.findUnique({
+      where: { userId },
+      include: { user: { select: { status: true } } },
+    });
+    if (!profile) throw new NotFoundException('Rider profile was not found.');
+    if (profile.onboardingStatus !== 'APPROVED' || profile.user.status !== 'ACTIVE') {
+      throw new BadRequestException('Only an approved, active rider can publish a job location.');
+    }
+
+    const locationUpdatedAt = new Date();
+    const updated = await this.prisma.riderProfile.update({
+      where: { userId },
+      data: {
+        currentLatitude: input.latitude,
+        currentLongitude: input.longitude,
+        locationAccuracyM: input.accuracyM ?? null,
+        locationUpdatedAt,
+      },
+      select: {
+        currentLatitude: true,
+        currentLongitude: true,
+        locationAccuracyM: true,
+        locationUpdatedAt: true,
+        isOnline: true,
+      },
+    });
+
+    return {
+      latitude: Number(updated.currentLatitude),
+      longitude: Number(updated.currentLongitude),
+      accuracyM: updated.locationAccuracyM == null ? null : Number(updated.locationAccuracyM),
+      locationUpdatedAt: updated.locationUpdatedAt,
+      isOnline: updated.isOnline,
+    };
+  }
+
+  private ensureFreshJobLocation(profile: {
+    currentLatitude: Prisma.Decimal | null;
+    currentLongitude: Prisma.Decimal | null;
+    locationAccuracyM: Prisma.Decimal | null;
+    locationUpdatedAt: Date | null;
+  }) {
+    if (
+      profile.currentLatitude == null ||
+      profile.currentLongitude == null ||
+      !profile.locationUpdatedAt
+    ) {
+      throw new BadRequestException('Publish your current GPS location before going online.');
+    }
+    const configuredAge = Number(process.env.RIDER_LOCATION_MAX_AGE_SECONDS);
+    const maxAgeMs =
+      (Number.isFinite(configuredAge) && configuredAge > 0 ? configuredAge : 120) * 1000;
+    if (Date.now() - profile.locationUpdatedAt.getTime() > maxAgeMs) {
+      throw new BadRequestException('Your GPS location is stale. Update it before going online.');
+    }
+    const configuredAccuracy = Number(process.env.RIDER_LOCATION_MAX_ACCURACY_M);
+    const maximumAccuracy =
+      Number.isFinite(configuredAccuracy) && configuredAccuracy > 0 ? configuredAccuracy : 500;
+    if (profile.locationAccuracyM != null && Number(profile.locationAccuracyM) > maximumAccuracy) {
+      throw new BadRequestException('GPS accuracy is too low. Acquire a better location fix.');
+    }
   }
 
   async updateProfile(userId: number, dto: UpdateRiderProfileDto) {
@@ -233,10 +326,10 @@ export class RidersService {
       data: {
         riderId: rider.id,
         type: dto.type,
-        number: dto.number,
+        number: dto.number?.trim().toUpperCase(),
         issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
         expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
-        documentUrl: dto.documentUrl,
+        documentUrl: dto.documentUrl.trim(),
       },
     });
   }
@@ -295,6 +388,7 @@ export class RidersService {
   }
 
   async listDriverLicenseRequests(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const rider = await this.requireProfile(userId);
     const skip = (page - 1) * limit;
     const where = { riderId: rider.id, provider: 'identro' };
@@ -392,7 +486,9 @@ export class RidersService {
     const resolved = await this.banks.resolveAccount(dto.bankCode, dto.accountNumber);
 
     return this.prisma.$transaction(async (tx) => {
-      if (dto.isPrimary) {
+      const existingAccounts = await tx.riderBankAccount.count({ where: { riderId: rider.id } });
+      const isPrimary = dto.isPrimary === true || existingAccounts === 0;
+      if (isPrimary) {
         await tx.riderBankAccount.updateMany({
           where: { riderId: rider.id },
           data: { isPrimary: false },
@@ -407,10 +503,62 @@ export class RidersService {
           accountNumber: resolved.account_number,
           accountName: resolved.account_name,
           verificationStatus: 'APPROVED',
-          isPrimary: dto.isPrimary ?? false,
+          isPrimary,
         },
       });
     });
+  }
+
+  async setPrimaryBankAccount(userId: number, accountId: number) {
+    const rider = await this.requireProfile(userId);
+    return this.prisma.$transaction(async (tx) => {
+      const account = await tx.riderBankAccount.findFirst({
+        where: { id: accountId, riderId: rider.id },
+      });
+      if (!account) {
+        throw new NotFoundException('Bank account not found or does not belong to this rider.');
+      }
+      if (account.verificationStatus !== 'APPROVED') {
+        throw new BadRequestException('Only a verified bank account can be set as primary.');
+      }
+      await tx.riderBankAccount.updateMany({
+        where: { riderId: rider.id, id: { not: accountId } },
+        data: { isPrimary: false },
+      });
+      return tx.riderBankAccount.update({
+        where: { id: accountId },
+        data: { isPrimary: true },
+      });
+    });
+  }
+
+  async removeBankAccount(userId: number, accountId: number) {
+    const rider = await this.requireProfile(userId);
+    await this.prisma.$transaction(async (tx) => {
+      const account = await tx.riderBankAccount.findFirst({
+        where: { id: accountId, riderId: rider.id },
+      });
+      if (!account) {
+        throw new NotFoundException('Bank account not found or does not belong to this rider.');
+      }
+
+      await tx.riderBankAccount.delete({ where: { id: accountId } });
+      if (account.isPrimary) {
+        const replacement = await tx.riderBankAccount.findFirst({
+          where: { riderId: rider.id, verificationStatus: 'APPROVED' },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true },
+        });
+        if (replacement) {
+          await tx.riderBankAccount.update({
+            where: { id: replacement.id },
+            data: { isPrimary: true },
+          });
+        }
+      }
+    });
+
+    return { success: true, message: 'Bank account removed successfully.' };
   }
 
   async addGuarantor(userId: number, dto: CreateGuarantorDto) {
@@ -536,10 +684,13 @@ export class RidersService {
 
     const session = await this.identro.mintSdkSessionToken({
       serviceType: 'FACE_LIVENESS_ONLY',
-      ...(dto.consentReference && { consentReference: dto.consentReference }),
+      // Identro requires a sourceType even for liveness-only sessions. Their
+      // SDK contract uses UPLOADED_REFERENCE without requiring a reference
+      // image when FACE_LIVENESS_ONLY is selected.
+      sourceType: 'UPLOADED_REFERENCE',
+      consentCaptured: dto.consentCaptured,
+      consentReference: dto.consentReference,
       ...(dto.idempotencyKey && { idempotencyKey: dto.idempotencyKey }),
-
-      subjectRef: `rider-${rider.id}`,
     });
 
     await this.prisma.riderLivenessVerification.create({
@@ -555,7 +706,82 @@ export class RidersService {
     return {
       sdkSessionToken: session.sdkToken,
       expiresAt: session.expiresAt,
+      reference: session.sessionId,
     };
+  }
+
+  async getLivenessCredentials(userId: number, reference: string) {
+    await this.requireOwnedLiveness(userId, reference);
+    return this.identro.getLivenessCredentials(reference);
+  }
+
+  async completeLivenessSession(
+    userId: number,
+    reference: string,
+    dto: CompleteLivenessSessionDto,
+  ) {
+    const record = await this.requireOwnedLiveness(userId, reference);
+    if (record.status !== 'PENDING') {
+      return {
+        id: record.id,
+        reference: record.reference,
+        status: record.status,
+        passed: record.status === 'APPROVED',
+        score: record.confidenceScore == null ? null : Number(record.confidenceScore),
+        verifiedAt: record.verifiedAt,
+      };
+    }
+
+    const result = await this.identro.completeLivenessSession(reference, dto);
+    const status =
+      result.passed === true ? 'APPROVED' : result.passed === false ? 'REJECTED' : 'PENDING';
+    const updated = await this.prisma.riderLivenessVerification.update({
+      where: { id: record.id },
+      data: {
+        status,
+        confidenceScore: result.score,
+        verifiedAt: status === 'APPROVED' ? new Date() : null,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: 'RIDER_LIVENESS_PROVIDER_VERIFICATION',
+        entity: 'RiderLivenessVerification',
+        entityId: String(record.id),
+        changes: {
+          provider: 'identro',
+          providerStatus: result.providerStatus,
+          decision: result.decision,
+          passed: result.passed,
+          score: result.score,
+          threshold: result.threshold,
+          status,
+        },
+      },
+    });
+
+    return {
+      id: updated.id,
+      reference: updated.reference,
+      status: updated.status,
+      passed: result.passed,
+      score: updated.confidenceScore == null ? null : Number(updated.confidenceScore),
+      threshold: result.threshold,
+      decision: result.decision,
+      verifiedAt: updated.verifiedAt,
+    };
+  }
+
+  private async requireOwnedLiveness(userId: number, reference: string) {
+    const record = await this.prisma.riderLivenessVerification.findFirst({
+      where: { userId, reference },
+    });
+    if (!record) {
+      throw new NotFoundException('Liveness session not found or does not belong to this rider.');
+    }
+    return record;
   }
 
   async verifyRiderDocument(userId: number, dto: VerifyRiderDocumentDto) {

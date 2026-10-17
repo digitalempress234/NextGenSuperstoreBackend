@@ -19,6 +19,38 @@ export class CreateSupportTicketDto {
   @IsArray()
   attachments?: string[];
 }
+
+export const RIDER_SUPPORT_CATEGORIES = [
+  'CUSTOMER_UNREACHABLE',
+  'INCORRECT_ADDRESS',
+  'CUSTOMER_REFUSED',
+  'DELIVERY_DISPUTE',
+  'SAFETY_CONCERN',
+  'OTHER',
+] as const;
+
+export class CreateRiderSupportTicketDto {
+  @ApiProperty({ example: 33 })
+  @IsInt()
+  deliveryId!: number;
+
+  @ApiProperty({
+    enum: RIDER_SUPPORT_CATEGORIES,
+    example: 'CUSTOMER_UNREACHABLE',
+  })
+  @IsIn(RIDER_SUPPORT_CATEGORIES)
+  category!: (typeof RIDER_SUPPORT_CATEGORIES)[number];
+
+  @ApiProperty({ example: 'Waited at the gate for 15 minutes; the customer is unreachable.' })
+  @IsString()
+  @MaxLength(5000)
+  description!: string;
+
+  @ApiPropertyOptional({ type: [String], example: ['https://cdn.example.com/evidence/photo.jpg'] })
+  @IsOptional()
+  @IsArray()
+  attachments?: string[];
+}
 export class UpdateSupportTicketDto {
   @ApiProperty({ enum: ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'], example: 'IN_PROGRESS' })
   @IsIn(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'])

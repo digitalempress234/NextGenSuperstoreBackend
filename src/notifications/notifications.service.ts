@@ -10,7 +10,13 @@ import { NotificationPriority, NotificationType, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { NotificationListQueryDto, UpdateNotificationPreferenceDto } from './dto/notification.dto';
+import {
+  NotificationListQueryDto,
+  RegisterNotificationDeviceDto,
+  UpdateNotificationPreferenceDto,
+} from './dto/notification.dto';
+import { NotificationsGateway } from './notifications.gateway';
+import { PushNotificationsService } from './push-notifications.service';
 
 interface NotifyUserInput {
   userId: number;
@@ -21,6 +27,7 @@ interface NotifyUserInput {
   data?: Prisma.InputJsonValue;
   templateKey?: Parameters<MailService['sendTemplate']>[0];
   templateData?: Record<string, unknown>;
+  eventKey?: string;
 }
 
 @Injectable()
@@ -33,6 +40,8 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly gateway: NotificationsGateway,
+    private readonly push: PushNotificationsService,
   ) {}
 
   onModuleInit() {
@@ -137,7 +146,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         ? 'placed successfully and is being prepared for pickup.'
         : 'placed successfully and is being prepared for delivery.';
     if (preference?.inApp ?? true) {
-      await this.prisma.notification.upsert({
+      const notification = await this.prisma.notification.upsert({
         where: { eventKey },
         update: {},
         create: {
@@ -153,6 +162,15 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           },
         },
       });
+      this.gateway.created(job.userId, notification);
+    }
+    if (preference?.push ?? true) {
+      await this.push.send(
+        job.userId,
+        'Order placed successfully',
+        `Order ${job.order.orderNumber} was ${fulfillmentMessage}`,
+        { orderId: job.order.id, status: job.order.currentStatus },
+      );
     }
     if (preference?.email ?? true) {
       await this.mail.sendTemplate(
@@ -196,12 +214,20 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException('Notification recipient not found.');
     }
 
+    if (input.eventKey) {
+      const existing = await this.prisma.notification.findUnique({
+        where: { eventKey: input.eventKey },
+      });
+      if (existing) return existing;
+    }
+
     const preference = await this.prisma.notificationPreference.findUnique({
       where: { userId_type: { userId: input.userId, type: input.type } },
     });
 
     const inAppEnabled = preference?.inApp ?? true;
     const emailEnabled = preference?.email ?? true;
+    const pushEnabled = preference?.push ?? true;
 
     let notification = null;
     if (inAppEnabled) {
@@ -213,8 +239,19 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           message: input.message,
           priority: input.priority ?? 'MEDIUM',
           data: input.data,
+          eventKey: input.eventKey,
         },
       });
+      this.gateway.created(user.id, notification);
+    }
+
+    if (pushEnabled) {
+      await this.push.send(
+        user.id,
+        input.title,
+        input.message,
+        input.data as Record<string, unknown>,
+      );
     }
 
     if (emailEnabled && input.templateKey) {
@@ -239,7 +276,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   async list(userId: number, query: NotificationListQueryDto) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 15;
+    const limit = Math.min(15, Math.max(1, query.limit ?? 15));
     const where = {
       recipientId: userId,
       ...(query.unreadOnly ? { isRead: false } : {}),
@@ -306,11 +343,45 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   async updatePreference(userId: number, dto: UpdateNotificationPreferenceDto) {
     return this.prisma.notificationPreference.upsert({
       where: { userId_type: { userId, type: dto.type } },
-      create: { userId, type: dto.type, inApp: dto.inApp ?? true, email: dto.email ?? true },
+      create: {
+        userId,
+        type: dto.type,
+        inApp: dto.inApp ?? true,
+        email: dto.email ?? true,
+        push: dto.push ?? true,
+      },
       update: {
         ...(dto.inApp === undefined ? {} : { inApp: dto.inApp }),
         ...(dto.email === undefined ? {} : { email: dto.email }),
+        ...(dto.push === undefined ? {} : { push: dto.push }),
       },
+    });
+  }
+
+  registerDevice(userId: number, dto: RegisterNotificationDeviceDto) {
+    return this.prisma.deviceRegistration.upsert({
+      where: { token: dto.token },
+      create: {
+        userId,
+        token: dto.token,
+        platform: dto.platform,
+        deviceId: dto.deviceId,
+      },
+      update: {
+        userId,
+        platform: dto.platform,
+        deviceId: dto.deviceId,
+        enabled: true,
+        lastSeenAt: new Date(),
+      },
+      select: { id: true, platform: true, deviceId: true, enabled: true, lastSeenAt: true },
+    });
+  }
+
+  async unregisterDevice(userId: number, id: number) {
+    await this.prisma.deviceRegistration.updateMany({
+      where: { id, userId },
+      data: { enabled: false },
     });
   }
 }

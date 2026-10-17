@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import QRCode from 'qrcode';
@@ -11,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SettlementsService } from '../settlements/settlements.service';
 import { completeOrder } from '../orders/complete-order';
+import { DeliveryService } from '../delivery/delivery.service';
 
 type Phase = 'PACKING' | 'RIDER_PICKUP';
 
@@ -20,6 +22,7 @@ export class ScanningService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly settlements: SettlementsService,
+    @Optional() private readonly deliveries?: DeliveryService,
   ) {}
 
   private hash(token: string) {
@@ -77,8 +80,15 @@ export class ScanningService {
       include: { delivery: true, pickup: true },
     });
     if (!order) throw new NotFoundException('Order not found.');
-    if (['ORDER_RECEIVED', 'CANCELLED'].includes(order.currentStatus))
-      throw new BadRequestException('A QR is unavailable for this order state.');
+    const available = order.delivery
+      ? order.currentStatus === 'OUT_FOR_DELIVERY'
+      : order.currentStatus === 'READY_FOR_PICKUP';
+    if (!available)
+      throw new BadRequestException(
+        order.delivery
+          ? 'The customer delivery QR becomes available when the order is out for delivery.'
+          : 'The collection QR becomes available when the order is ready for pickup.',
+      );
     return this.issue(orderId, order.delivery ? 'CUSTOMER_DELIVERY' : 'STORE_PICKUP', regenerate);
   }
   private async storeAccess(userId: number, storeId: number) {
@@ -237,6 +247,15 @@ export class ScanningService {
         },
       }),
     ]);
+    await this.notifications.notifyUser({
+      userId: order.userId,
+      type: 'ORDER_STATUS_UPDATE',
+      title: 'Order ready for pickup',
+      message: `Order ${order.orderNumber} is ready for pickup.`,
+      data: { orderId, orderNumber: order.orderNumber, status: 'READY_FOR_PICKUP' },
+      eventKey: `order-status:${orderId}:READY_FOR_PICKUP`,
+    });
+    await this.deliveries?.notifyAvailableRidersForOrder(orderId);
     return { orderId, status: 'READY_FOR_PICKUP', checklist };
   }
   private async validCredential(orderId: number, purpose: string, payload: string) {
@@ -282,21 +301,15 @@ export class ScanningService {
           reason: 'Rider QR and product checklist verified.',
         },
       });
-      await completeOrder(
-        tx,
-        { ...order, currentStatus: 'DELIVERED' },
-        undefined,
-        'System completed the order after customer QR verification.',
-      );
     });
     return { orderId, status: 'PICKED_UP', verifiedItems: checklist };
   }
   async confirmDelivery(riderId: number, orderId: number, payload: string) {
     const order = await this.riderOrder(riderId, orderId);
     const credential = await this.validCredential(orderId, 'CUSTOMER_DELIVERY', payload);
-    if (!['PICKED_UP', 'OUT_FOR_DELIVERY'].includes(order.currentStatus))
+    if (order.currentStatus !== 'OUT_FOR_DELIVERY')
       throw new BadRequestException('Order is not ready for delivery confirmation.');
-    await this.prisma.$transaction(async (tx) => {
+    const rewards = await this.prisma.$transaction(async (tx) => {
       const consumed = await tx.orderQrCredential.updateMany({
         where: { id: credential.id, status: 'ACTIVE', expiresAt: { gt: new Date() } },
         data: { status: 'CONSUMED', consumedAt: new Date(), consumedById: riderId },
@@ -319,6 +332,12 @@ export class ScanningService {
           reason: 'Customer delivery QR verified.',
         },
       });
+      return completeOrder(
+        tx,
+        { ...order, currentStatus: 'DELIVERED' },
+        undefined,
+        'System completed the order after customer QR verification.',
+      );
     });
     await this.notifications.notifyUser({
       userId: order.userId,
@@ -328,7 +347,18 @@ export class ScanningService {
       data: { deliveryId: order.delivery?.id, orderId },
       templateKey: 'deliveryCompleted',
       templateData: { orderNumber: order.orderNumber },
+      eventKey: `delivery-completed:${orderId}`,
     });
+    if (rewards.points > 0 || rewards.cashbackAmount !== '0.00') {
+      await this.notifications.notifyUser({
+        userId: order.userId,
+        type: 'REWARD_UPDATE',
+        title: 'Rewards earned',
+        message: `You earned ${rewards.points} points and ₦${rewards.cashbackAmount} cashback from order ${order.orderNumber}.`,
+        data: { orderId, points: rewards.points, cashbackAmount: rewards.cashbackAmount },
+        eventKey: `rewards-earned:${orderId}`,
+      });
+    }
     return { orderId, status: 'COMPLETED', deliveryStatus: 'DELIVERED', verified: true };
   }
 }

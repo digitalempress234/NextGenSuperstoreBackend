@@ -14,7 +14,7 @@ export class CatalogService {
 
   async search(query: ProductSearchDto) {
     const page = Math.max(1, query.page ?? 1);
-    const limit = Math.min(100, Math.max(1, query.limit ?? 15));
+    const limit = Math.min(15, Math.max(1, query.limit ?? 15));
     const skip = (page - 1) * limit;
 
     const where = {

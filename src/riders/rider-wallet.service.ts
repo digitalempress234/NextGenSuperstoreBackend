@@ -36,6 +36,7 @@ export class RiderWalletService {
   }
 
   async getTransactions(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) return { items: [], total: 0, page, limit };
 
@@ -77,7 +78,7 @@ export class RiderWalletService {
       where: { userId },
       include: {
         bankAccounts: {
-          where: { isPrimary: true },
+          where: dto.bankAccountId ? { id: dto.bankAccountId } : { isPrimary: true },
           take: 1,
         },
       },
@@ -85,10 +86,19 @@ export class RiderWalletService {
 
     if (!riderProfile) throw new NotFoundException('Rider profile not found.');
 
-    const primaryBank = riderProfile.bankAccounts[0];
-    if (!primaryBank || primaryBank.verificationStatus !== 'APPROVED') {
+    const payoutBank = riderProfile.bankAccounts[0];
+    if (!payoutBank) {
       throw new BadRequestException(
-        'A verified primary bank account is required before withdrawal.',
+        dto.bankAccountId
+          ? 'The selected bank account does not belong to this rider.'
+          : 'A primary bank account is required before withdrawal.',
+      );
+    }
+    if (payoutBank.verificationStatus !== 'APPROVED') {
+      throw new BadRequestException(
+        dto.bankAccountId
+          ? 'The selected bank account is not verified.'
+          : 'A verified primary bank account is required before withdrawal.',
       );
     }
 
@@ -114,9 +124,9 @@ export class RiderWalletService {
         data: {
           userId,
           amount: new Prisma.Decimal(dto.amount),
-          bankName: primaryBank.bankName,
-          accountNumber: primaryBank.accountNumber,
-          accountName: primaryBank.accountName,
+          bankName: payoutBank.bankName,
+          accountNumber: payoutBank.accountNumber,
+          accountName: payoutBank.accountName,
           mode: dto.mode,
           status: 'PENDING',
         },

@@ -74,7 +74,7 @@ export class AdminController {
   @ApiOperation({
     summary: 'Approve or reject the complete motorcycle rider application',
     description:
-      'Can approve pending motorcycle photo/plate and registration checks in the same transaction. It never overrides incomplete or failed automatic identity, driver-licence, or liveness checks. After commit, the rider receives an in-app notification and a dedicated decision email.',
+      'Can approve a pending manual driver-licence image, motorcycle photo/plate, and registration checks in the same transaction. Identity and Identro liveness must pass automatically. Failed provider-backed licence checks cannot be manually overridden. After commit, the rider receives an in-app notification and a dedicated decision email.',
   })
   @ApiParam({ name: 'id', example: 50 })
   @OkExample({ id: 50, onboardingStatus: 'APPROVED' })
@@ -146,9 +146,9 @@ export class AdminController {
   @Patch('rider-licences/:id/review')
   @RequirePermissions('kyc.review')
   @ApiOperation({
-    summary: 'Review a legacy rider/driving licence record',
+    summary: 'Approve or reject a submitted driver licence image',
     description:
-      'Cannot manually approve a provider-backed record unless Identro already returned VERIFIED.',
+      'Primary licence-review route. A manual record requires a readable uploaded image; its number and dates are optional. A provider-backed record cannot be manually approved unless Identro already returned VERIFIED.',
   })
   @ApiParam({ name: 'id', example: 21 })
   @StandardErrors()
@@ -194,19 +194,6 @@ export class AdminController {
     @Body() dto: ReviewDocumentDto,
   ) {
     return this.adminService.reviewVehicle(vehicleId, req.staffUser.id, dto.status, dto.reason);
-  }
-
-  @Patch('rider-liveness/:id/review')
-  @RequirePermissions('kyc.review')
-  @ApiOperation({ summary: 'Approve or reject a completed rider liveness session' })
-  @ApiParam({ name: 'id', example: 23 })
-  @StandardErrors()
-  reviewRiderLiveness(
-    @Param('id', ParseIntPipe) livenessId: number,
-    @Req() req: { staffUser: AuthenticatedStaff },
-    @Body() dto: ReviewDocumentDto,
-  ) {
-    return this.adminService.reviewLiveness(livenessId, req.staffUser.id, dto.status, dto.reason);
   }
 
   @Patch('guarantor-documents/:id/review')

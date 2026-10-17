@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class GoogleSignInDto {
   @ApiProperty({
@@ -10,4 +10,9 @@ export class GoogleSignInDto {
   @IsString()
   @MinLength(20)
   idToken!: string;
+
+  @ApiPropertyOptional({ example: 'MOBILE', enum: ['WEB', 'MOBILE'] })
+  @IsOptional()
+  @IsIn(['WEB', 'MOBILE'])
+  clientType?: 'WEB' | 'MOBILE';
 }

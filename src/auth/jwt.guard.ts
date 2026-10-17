@@ -37,10 +37,12 @@ export class JwtGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const token = request.cookies?.purse_access_token as string | undefined;
+    const authorization = request.headers?.authorization as string | undefined;
+    const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    const token = (request.cookies?.purse_access_token as string | undefined) ?? bearer;
 
     if (!token) {
-      throw new UnauthorizedException('Authentication cookie is missing.');
+      throw new UnauthorizedException('Authentication cookie or bearer token is missing.');
     }
 
     try {
@@ -62,16 +64,19 @@ export class JwtGuard implements CanActivate {
           where: { id: payload.sid },
         });
 
-        if (session && (session.revokedAt || session.expiresAt <= new Date())) {
+        if (
+          !session ||
+          session.userId !== user.id ||
+          session.revokedAt ||
+          session.expiresAt <= new Date()
+        ) {
           throw new UnauthorizedException('Session has expired or been revoked.');
         }
 
-        if (session) {
-          await this.prisma.adminSession.update({
-            where: { id: session.id },
-            data: { lastSeenAt: new Date() },
-          });
-        }
+        await this.prisma.adminSession.update({
+          where: { id: session.id },
+          data: { lastSeenAt: new Date() },
+        });
       }
 
       request.user = {

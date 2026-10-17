@@ -3,16 +3,21 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { money } from '../common/money';
 import type { SaveVoucherDto } from './dto/rewards.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RewardsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
 
   private async availableCashback(userId: number, tx: Prisma.TransactionClient = this.prisma) {
     const rows = await tx.cashbackReward.findMany({ where: { userId, status: 'AVAILABLE' } });
@@ -41,6 +46,7 @@ export class RewardsService {
   }
 
   async cashback(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const [totalCashback, history, total] = await Promise.all([
       this.availableCashback(userId),
       this.prisma.cashbackReward.findMany({
@@ -75,7 +81,7 @@ export class RewardsService {
     const amount = money(rawAmount);
     if (amount.lte(0))
       throw new BadRequestException('Redemption amount must be greater than zero.');
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM User WHERE id = ${userId} FOR UPDATE`;
       const rows = await tx.cashbackReward.findMany({
         where: { userId, status: 'AVAILABLE' },
@@ -126,9 +132,19 @@ export class RewardsService {
         reference,
       };
     });
+    await this.notifications?.notifyUser({
+      userId,
+      type: 'REWARD_UPDATE',
+      title: 'Cashback redeemed',
+      message: `₦${result.amount} cashback has been added to your wallet.`,
+      data: { amount: result.amount, reference: result.reference, action: 'cashback_redeemed' },
+      eventKey: `cashback-redeemed:${result.reference}`,
+    });
+    return result;
   }
 
   async vouchers(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const now = new Date();
     const where = {
       isActive: true,
@@ -177,7 +193,7 @@ export class RewardsService {
   }
 
   async claim(userId: number, id: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const voucher = await tx.rewardVoucher.findFirst({
         where: {
           id,
@@ -190,7 +206,7 @@ export class RewardsService {
       const existing = await tx.userVoucher.findUnique({
         where: { userId_voucherId: { userId, voucherId: id } },
       });
-      if (existing) return existing;
+      if (existing) return { item: existing, created: false, title: voucher.title };
       const account = await tx.rewardAccount.upsert({
         where: { userId },
         create: { userId },
@@ -203,8 +219,23 @@ export class RewardsService {
           where: { userId },
           data: { availablePoints: { decrement: voucher.pointsCost } },
         });
-      return tx.userVoucher.create({ data: { userId, voucherId: id } });
+      return {
+        item: await tx.userVoucher.create({ data: { userId, voucherId: id } }),
+        created: true,
+        title: voucher.title,
+      };
     });
+    if (result.created) {
+      await this.notifications?.notifyUser({
+        userId,
+        type: 'REWARD_UPDATE',
+        title: 'Voucher claimed',
+        message: `${result.title} is now available in your rewards.`,
+        data: { voucherId: id, action: 'voucher_claimed' },
+        eventKey: `voucher-claimed:${id}:${userId}`,
+      });
+    }
+    return result.item;
   }
 
   async apply(userId: number, selector: string) {

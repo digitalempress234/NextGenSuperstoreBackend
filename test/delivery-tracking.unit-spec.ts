@@ -67,6 +67,27 @@ describe('DeliveryTrackingService', () => {
     expect(result.deliveryId).toBe(10);
   });
 
+  it('keeps accepting location updates after the rider arrives at the customer', async () => {
+    prisma.delivery.findUnique.mockResolvedValue({
+      id: 10,
+      riderId: 7,
+      status: DeliveryStatus.ARRIVED_AT_CUSTOMER,
+    });
+    redis.client.set.mockResolvedValue('OK');
+    prisma.deliveryLocation.create.mockResolvedValue({
+      id: 2,
+      deliveryId: 10,
+      riderId: 7,
+      latitude: 6.5,
+      longitude: 3.3,
+      recordedAt: new Date(),
+    });
+
+    await expect(service.recordLocation(7, 10, { latitude: 6.5, longitude: 3.3 })).resolves.toEqual(
+      expect.objectContaining({ deliveryId: 10 }),
+    );
+  });
+
   it('rate limits excessive location updates', async () => {
     prisma.delivery.findUnique.mockResolvedValue({
       id: 10,

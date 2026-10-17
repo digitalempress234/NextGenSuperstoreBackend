@@ -54,8 +54,8 @@ export class StoresService {
         where,
         include: { items: true, delivery: true, pickup: true, payment: true },
         orderBy: { placedAt: 'desc' },
-        skip: (query.page - 1) * Math.min(query.limit, 100),
-        take: Math.min(query.limit, 100),
+        skip: (query.page - 1) * Math.min(query.limit, 15),
+        take: Math.min(query.limit, 15),
       }),
       this.prisma.order.count({ where }),
     ]);
@@ -63,8 +63,8 @@ export class StoresService {
       items,
       total,
       page: query.page,
-      limit: Math.min(query.limit, 100),
-      pages: Math.ceil(total / Math.min(query.limit, 100)),
+      limit: Math.min(query.limit, 15),
+      pages: Math.ceil(total / Math.min(query.limit, 15)),
     };
   }
 
@@ -85,6 +85,7 @@ export class StoresService {
   }
 
   async campaigns(userId: number, storeId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     await this.assertAccess(userId, storeId);
     const where = { storeId };
     const [items, total] = await Promise.all([
@@ -130,6 +131,7 @@ export class StoresService {
   }
 
   async inbox(userId: number, storeId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     await this.assertAccess(userId, storeId);
     const where = { storeId };
     const [items, total] = await Promise.all([
@@ -150,6 +152,7 @@ export class StoresService {
   }
 
   async riders(userId: number, storeId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     await this.assertAccess(userId, storeId);
     const where = { user: { riderDeliveries: { some: { order: { storeId } } } } };
     const [items, total] = await Promise.all([
@@ -177,6 +180,7 @@ export class StoresService {
   }
 
   async compareDeals(userId: number, storeId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     await this.assertAccess(userId, storeId);
     const where = { storeId, isActive: true };
     const [offers, total] = await Promise.all([

@@ -9,6 +9,7 @@ export const DELIVERY_SOCKET_EVENTS = {
   locationInput: 'delivery:location',
   locationUpdated: 'delivery.location.updated',
   statusUpdated: 'delivery.status.updated',
+  jobClaimed: 'delivery.job.claimed',
   locationAcknowledged: 'delivery.location.ack',
 } as const;
 

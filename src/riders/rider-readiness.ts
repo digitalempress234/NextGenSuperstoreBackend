@@ -6,7 +6,11 @@ export interface RiderReadinessSnapshot {
   emergencyContactPhone?: string | null;
   onboardingStatus: string;
   documents: Array<{ type: string; documentNumber: string | null; status: ReviewStatus }>;
-  licences: Array<{ number?: string | null; status: ReviewStatus }>;
+  licences: Array<{
+    number?: string | null;
+    documentUrl?: string | null;
+    status: ReviewStatus;
+  }>;
   liveness: Array<{ status: ReviewStatus }>;
   vehicles: Array<{
     type: string;
@@ -33,7 +37,9 @@ export function assessRiderReadiness(profile: RiderReadinessSnapshot) {
     (document) => IDENTITY_TYPES.has(document.type.toUpperCase()) && document.documentNumber,
   );
   const verifiedLicence = profile.licences.find((licence) => licence.status === 'APPROVED');
-  const licenceWithNumber = profile.licences.find((licence) => Boolean(licence.number));
+  const licenceEvidence = profile.licences.find(
+    (licence) => Boolean(licence.documentUrl) || Boolean(licence.number),
+  );
   const hasVehiclePhoto = profile.vehicles.some((vehicle) => Boolean(vehicle.photoUrl));
   const hasMotorizedVehicle = profile.vehicles.some(
     (vehicle) => !NON_MOTORIZED_TYPES.has(vehicle.type.toUpperCase()),
@@ -44,15 +50,15 @@ export function assessRiderReadiness(profile: RiderReadinessSnapshot) {
 
   const missingApplicationRequirements: string[] = [];
   if (!profile.areaOfOperation?.trim()) missingApplicationRequirements.push('AREA_OF_OPERATION');
-  if (!identity && !licenceWithNumber) missingApplicationRequirements.push('IDENTITY_DOCUMENT');
+  if (!identity && !licenceEvidence) missingApplicationRequirements.push('IDENTITY_DOCUMENT');
   if (!profile.liveness.length) missingApplicationRequirements.push('LIVENESS_SESSION');
   if (!profile.vehicles.length) missingApplicationRequirements.push('VEHICLE');
   if (profile.vehicles.length && !hasVehiclePhoto)
     missingApplicationRequirements.push('VEHICLE_PHOTO');
   if (!profile.emergencyContactName?.trim() || !profile.emergencyContactPhone?.trim())
     missingApplicationRequirements.push('EMERGENCY_CONTACT');
-  if (hasMotorizedVehicle && !licenceWithNumber)
-    missingApplicationRequirements.push('DRIVER_LICENSE_VERIFICATION');
+  if (hasMotorizedVehicle && !licenceEvidence)
+    missingApplicationRequirements.push('DRIVER_LICENSE_DOCUMENT');
   if (hasMotorizedVehicle && !hasRegistration)
     missingApplicationRequirements.push('VEHICLE_REGISTRATION');
 

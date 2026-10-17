@@ -36,7 +36,7 @@ import { ApplyBnplDto, BnplPlansQuery, ConfirmBnplDto, ReviewBnplDto } from './d
 import { BnplService } from './bnpl.service';
 import { PayBnplRepaymentDto } from './dto/bnpl.dto';
 
-@ApiTags('BNPL')
+@ApiTags('Legacy internal BNPL')
 @ApiCookieAuth('purse_access_token')
 @Controller('bnpl')
 export class BnplController {
@@ -149,7 +149,7 @@ export class BnplController {
   }
 }
 
-@ApiTags('BNPL administration')
+@ApiTags('Legacy internal BNPL administration')
 @ApiCookieAuth('purse_staff_token')
 @AdminRoute()
 @UseGuards(StaffJwtGuard)

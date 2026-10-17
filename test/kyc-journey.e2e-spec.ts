@@ -253,7 +253,11 @@ describe('KYC & CAC Verification Journey E2E', () => {
   it('Rider mints a liveness session', async () => {
     const res = await req('post', '/purse/v1/riders/kyc/session')
       .set('Cookie', riderCookie)
-      .send({ consentReference: 'ref-123', idempotencyKey: 'live-test-001' })
+      .send({
+        consentCaptured: true,
+        consentReference: 'ref-123',
+        idempotencyKey: 'live-test-001',
+      })
       .expect(201);
 
     expect(app.get(IdentroService).mintSdkSessionToken).toHaveBeenCalledWith(

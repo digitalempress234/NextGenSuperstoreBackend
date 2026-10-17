@@ -13,7 +13,11 @@ export class OrderQrController {
   constructor(private readonly scanning: ScanningService) {}
   @Get(':id/qr')
   @RequirePermissions('orders.qr.view')
-  @ApiOperation({ summary: 'Customer: generate a secure QR for delivery or store collection' })
+  @ApiOperation({
+    summary: 'Customer: generate a secure QR for delivery or store collection',
+    description:
+      'Delivery QR is available only at OUT_FOR_DELIVERY. Store collection QR is available only at READY_FOR_PICKUP. Credentials expire after 30 minutes and are single-use.',
+  })
   @OkExample({
     orderId: 101,
     purpose: 'CUSTOMER_DELIVERY',

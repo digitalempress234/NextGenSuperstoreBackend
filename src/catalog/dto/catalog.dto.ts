@@ -1,6 +1,15 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreateCategoryDto {
   @ApiProperty({ example: 'Beverages' })
@@ -78,9 +87,11 @@ export class ProductSearchDto {
   @IsInt()
   page = 1;
 
-  @ApiPropertyOptional({ example: 15, default: 15 })
+  @ApiPropertyOptional({ example: 15, default: 15, minimum: 1, maximum: 15 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
+  @Min(1)
+  @Max(15)
   limit = 15;
 }

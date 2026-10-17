@@ -1,10 +1,25 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiCookieAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { OkExample } from '../common/api-docs';
 
 import { CurrentUser } from '../common/current-user.decorator';
-import { NotificationListQueryDto, UpdateNotificationPreferenceDto } from './dto/notification.dto';
+import {
+  NotificationListQueryDto,
+  RegisterNotificationDeviceDto,
+  UpdateNotificationPreferenceDto,
+} from './dto/notification.dto';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
@@ -42,9 +57,13 @@ export class NotificationsController {
   }
 
   @Get('preferences')
-  @ApiOperation({ summary: 'Get notification delivery preferences' })
+  @ApiOperation({
+    summary: 'Get notification delivery preferences',
+    description:
+      'Preferences may be configured for orders, payments, wallet funding, delivery, rider jobs, chat messages, support replies, rewards, and KYC updates.',
+  })
   @OkExample(
-    [{ type: 'ORDER_STATUS_UPDATE', inApp: true, email: true }],
+    [{ type: 'ORDER_STATUS_UPDATE', inApp: true, email: true, push: true }],
     'Notification preferences',
   )
   preferences(@CurrentUser('id') userId: number) {
@@ -52,9 +71,9 @@ export class NotificationsController {
   }
 
   @Patch('preferences')
-  @ApiOperation({ summary: 'Update an in-app/email notification preference' })
+  @ApiOperation({ summary: 'Update an in-app, email, or push notification preference' })
   @OkExample(
-    { type: 'ORDER_STATUS_UPDATE', inApp: true, email: true },
+    { type: 'ORDER_STATUS_UPDATE', inApp: true, email: true, push: true },
     'Notification preference updated',
   )
   updatePreference(
@@ -62,5 +81,22 @@ export class NotificationsController {
     @Body() dto: UpdateNotificationPreferenceDto,
   ) {
     return this.notificationsService.updatePreference(userId, dto);
+  }
+
+  @Post('devices')
+  @ApiOperation({
+    summary: 'Register or refresh an FCM device token',
+    description:
+      'Used for background notifications including orders, payments, wallet funding, delivery jobs, chat, support, rewards, and KYC. Foreground clients may also connect to Socket.IO namespace /notifications and listen for notification.created.',
+  })
+  registerDevice(@CurrentUser('id') userId: number, @Body() dto: RegisterNotificationDeviceDto) {
+    return this.notificationsService.registerDevice(userId, dto);
+  }
+
+  @Delete('devices/:id')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Unregister an FCM device token' })
+  unregisterDevice(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) deviceId: number) {
+    return this.notificationsService.unregisterDevice(userId, deviceId);
   }
 }

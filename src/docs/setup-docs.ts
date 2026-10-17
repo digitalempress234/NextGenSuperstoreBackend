@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import type { OpenAPIObject } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
 
 import { AdminModule } from '../admin/admin.module';
@@ -33,6 +34,22 @@ import { ChatsModule } from '../chats/chats.module';
 import { SupportModule } from '../support/support.module';
 import { ScanningModule } from '../scanning/scanning.module';
 
+function addNativeBearerAlternative(document: OpenAPIObject) {
+  for (const path of Object.values(document.paths)) {
+    for (const operation of Object.values(path ?? {})) {
+      if (!operation || typeof operation !== 'object' || !('security' in operation)) continue;
+      const security = operation.security;
+      if (!Array.isArray(security)) continue;
+      if (
+        security.some((requirement) => 'purse_access_token' in requirement) &&
+        !security.some((requirement) => 'mobile_bearer' in requirement)
+      ) {
+        security.push({ mobile_bearer: [] });
+      }
+    }
+  }
+}
+
 export function setupScalarDocs(app: INestApplication) {
   const serverUrl = process.env.BASE_URL ?? '/';
 
@@ -60,6 +77,15 @@ export function setupScalarDocs(app: INestApplication) {
         description: 'Admin and Staff Authentication Cookie',
       },
       'purse_staff_token',
+    )
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Native/mobile access token. Browser clients should use the access cookie.',
+      },
+      'mobile_bearer',
     );
 
   const adminConfig = baseConfig
@@ -94,6 +120,7 @@ export function setupScalarDocs(app: INestApplication) {
       ScanningModule,
     ],
   });
+  addNativeBearerAlternative(adminDocument);
   app.use(
     '/docs/admin',
     apiReference({
@@ -124,6 +151,7 @@ export function setupScalarDocs(app: INestApplication) {
       ScanningModule,
     ],
   });
+  addNativeBearerAlternative(storeDocument);
 
   if (storeDocument.paths) {
     Object.keys(storeDocument.paths).forEach((path) => {
@@ -153,12 +181,20 @@ export function setupScalarDocs(app: INestApplication) {
 
   const riderConfig = baseConfig
     .setDescription(
-      'API for motorcycle rider applicants and approved RIDER users using purse_access_token. KYC uses liveness only (no separate face match), automatically verifies Nigerian driver licences through Identro, and sends motorcycle photo/plate and registration evidence to staff review. Bank details are required before withdrawal rather than onboarding approval. Guarantor, ownership evidence, insurance, and roadworthiness are conditional. Includes delivery offers, secure QR verification, item pickup scans, delivery confirmation, live tracking, wallet, and notifications.',
+      'API for motorcycle rider applicants and approved RIDER users using purse_access_token. KYC uses automatic liveness (no separate face match), administrator-reviewed driver-licence images, and staff review of motorcycle photo/plate and registration evidence. Bank details are required before withdrawal rather than onboarding approval; riders can manage multiple verified payout accounts, choose a primary account, and target a specific account during withdrawal. Guarantor, ownership evidence, insurance, and roadworthiness are conditional. Approved riders publish fresh GPS, go online, browse nearby delivery jobs within their registered service area, atomically claim one, verify the store handoff QR and products, then complete live tracking and customer handoff. Stores without coordinates use service-area matching as a documented fallback. Includes wallet, notifications, and assigned-delivery support tickets.',
     )
     .build();
   const riderDocument = SwaggerModule.createDocument(app, riderConfig, {
-    include: [RidersModule, DeliveryModule, NotificationsModule, ScanningModule, UploadsModule],
+    include: [
+      RidersModule,
+      DeliveryModule,
+      NotificationsModule,
+      ScanningModule,
+      UploadsModule,
+      SupportModule,
+    ],
   });
+  addNativeBearerAlternative(riderDocument);
 
   if (riderDocument.paths) {
     Object.keys(riderDocument.paths).forEach((path) => {
@@ -183,7 +219,7 @@ export function setupScalarDocs(app: INestApplication) {
   const publicConfig = baseConfig
     .setDescription(
       'API for Customers and Public access. ' +
-        'Authenticated CUSTOMER routes use the purse_access_token HttpOnly cookie; public routes require no cookie. Includes catalog and barcode lookup, rewards, referrals, cart, checkout, wallet deposit/withdrawal/ledger, order QR display, orders/returns, store chat, support conversations, and notifications.',
+        'Authenticated CUSTOMER routes use the purse_access_token HttpOnly cookie on web or a Bearer access token in native apps; public routes require neither. Includes passkeys, rotating refresh sessions, catalog and barcode lookup, rewards, referrals, cart, checkout, Klump provider-backed BNPL with signed webhooks and server-side verification, wallet deposit/withdrawal/ledger, asynchronous refunds, state-gated order QR display, orders/returns, store chat, support conversations, Socket.IO notifications, and FCM push triggers for orders, payments, wallet funding, delivery, chat, support, rewards, and KYC.',
     )
     .build();
   const publicDocument = SwaggerModule.createDocument(app, publicConfig, {
@@ -207,6 +243,7 @@ export function setupScalarDocs(app: INestApplication) {
       ScanningModule,
     ],
   });
+  addNativeBearerAlternative(publicDocument);
   for (const path of Object.keys(publicDocument.paths)) {
     if (path.includes('/admin/')) delete publicDocument.paths[path];
   }
@@ -226,6 +263,7 @@ export function setupScalarDocs(app: INestApplication) {
     .setDescription('Full REST API for the Purse multi-store marketplace.')
     .build();
   const fullDocument = SwaggerModule.createDocument(app, fullConfig);
+  addNativeBearerAlternative(fullDocument);
   app.use('/docs', apiReference({ content: fullDocument, theme: 'moon', layout: 'modern' }));
   SwaggerModule.setup('swagger', app, fullDocument, {
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },

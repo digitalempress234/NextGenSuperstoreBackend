@@ -5,6 +5,7 @@ import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 const RIDER_REPORTED_STATUSES: DeliveryStatus[] = [
   'IN_TRANSIT',
   'OUT_FOR_DELIVERY',
+  'ARRIVED_AT_CUSTOMER',
   'FAILED',
   'CANCELLED',
 ];
@@ -12,9 +13,9 @@ const RIDER_REPORTED_STATUSES: DeliveryStatus[] = [
 export class UpdateDeliveryStatusDto {
   @ApiProperty({
     enum: RIDER_REPORTED_STATUSES,
-    example: 'IN_TRANSIT',
+    example: 'ARRIVED_AT_CUSTOMER',
     description:
-      'PICKED_UP and DELIVERED are intentionally excluded; both handoffs require QR verification.',
+      'Use ARRIVED_AT_CUSTOMER when the rider reaches the delivery address. The state is persisted so the app can restore its delivery-confirmation modal after a restart. PICKED_UP and DELIVERED are intentionally excluded; both handoffs require QR verification.',
   })
   @IsIn(RIDER_REPORTED_STATUSES)
   status!: DeliveryStatus;

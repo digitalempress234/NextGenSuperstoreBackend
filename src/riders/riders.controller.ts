@@ -1,10 +1,21 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
 import {
   CreateBankAccountDto,
+  CompleteLivenessSessionDto,
   CreateGuarantorDocumentDto,
   CreateGuarantorDto,
   CreateRiderLicenceDto,
@@ -13,6 +24,7 @@ import {
   CreateVehicleDto,
   MintKycSessionDto,
   ReplaceVehicleDocumentDto,
+  SetPrimaryBankAccountDto,
   UpdateRiderProfileDto,
   UpdateRiderSettingsDto,
   UpdateVehicleDto,
@@ -24,6 +36,8 @@ import { RidersService } from './riders.service';
 import { BankResolverService } from './bank-resolver.service';
 import { RiderWalletService } from './rider-wallet.service';
 import { RiderWithdrawDto } from './dto/rider-wallet.dto';
+import { UpdateRiderAvailabilityDto } from './dto/rider-availability.dto';
+import { UpdateRiderLocationDto } from './dto/rider-location.dto';
 import { RIDER_INBOX_EXAMPLE, RIDER_SETTINGS_EXAMPLE } from '../common/docs-examples';
 
 @ApiTags('Riders')
@@ -51,7 +65,11 @@ export class RidersController {
         requirements: [
           { key: 'identity', label: 'Government identity number', required: true },
           { key: 'liveness', label: 'Liveness-only verification', required: true },
-          { key: 'driverLicence', label: 'Automatic driver licence verification', required: true },
+          {
+            key: 'driverLicence',
+            label: 'Clear driver licence image',
+            required: true,
+          },
           { key: 'motorcycle', label: 'Motorcycle photo, plate, and registration', required: true },
         ],
       },
@@ -101,7 +119,13 @@ export class RidersController {
     emergencyContactPhone: '+2348088888888',
     onboardingStatus: 'UNDER_REVIEW',
     documents: [{ type: 'NIN', status: 'APPROVED' }],
-    licences: [{ number: 'AAA00000AA00', providerStatus: 'VERIFIED', status: 'APPROVED' }],
+    licences: [
+      {
+        number: 'AAA00000AA00',
+        documentUrl: 'https://res.cloudinary.com/demo/image/upload/driver-licence.jpg',
+        status: 'APPROVED',
+      },
+    ],
     liveness: [{ status: 'PENDING' }],
     vehicles: [
       {
@@ -148,6 +172,42 @@ export class RidersController {
     return this.ridersService.updateSettings(userId, dto);
   }
 
+  @Patch('availability')
+  @ApiOperation({
+    summary: 'Rider: go online or offline for delivery jobs',
+    description:
+      'Only a rider with complete operational approval and a fresh GPS point can go online. Available jobs must be nearby and inside the registered service area.',
+  })
+  @OkExample({
+    id: 50,
+    userId: 1001,
+    onboardingStatus: 'APPROVED',
+    isOnline: true,
+    canBrowseAvailableDeliveries: true,
+  })
+  @StandardErrors()
+  updateAvailability(@CurrentUser('id') userId: number, @Body() dto: UpdateRiderAvailabilityDto) {
+    return this.ridersService.updateAvailability(userId, dto.isOnline);
+  }
+
+  @Patch('location')
+  @ApiOperation({
+    summary: 'Approved rider: publish current GPS location for nearby job matching',
+    description:
+      'Stores only the latest point. The mobile app should update it when the rider goes online and whenever it becomes stale. Job browsing and claiming reject locations older than the configured maximum age.',
+  })
+  @OkExample({
+    latitude: 6.6018,
+    longitude: 3.3515,
+    accuracyM: 12.5,
+    locationUpdatedAt: '2026-10-07T11:50:00.000Z',
+    isOnline: true,
+  })
+  @StandardErrors()
+  updateLocation(@CurrentUser('id') userId: number, @Body() dto: UpdateRiderLocationDto) {
+    return this.ridersService.updateCurrentLocation(userId, dto);
+  }
+
   @Post('profile')
   @ApiOperation({ summary: 'Create or update rider profile details' })
   @OkExample({ id: 50, areaOfOperation: 'Ikeja', onboardingStatus: 'PROFILE_COMPLETED' })
@@ -190,12 +250,17 @@ export class RidersController {
 
   @Post('licences')
   @ApiOperation({
-    summary: 'Attach a legacy licence image',
+    summary: 'Submit a driver licence image for administrator review',
     description:
-      'Legacy/manual fallback. New mobile integrations should use POST /riders/driver-license/verify.',
-    deprecated: true,
+      'Primary driver-licence onboarding flow. Upload the image first, then submit its URL. The licence number and issue/expiry dates are optional because riders may not know which printed value is the licence number. The record remains PENDING until an authorized administrator approves or rejects the image.',
   })
-  @OkExample({ id: 21, type: 'DRIVERS_LICENSE', status: 'PENDING' })
+  @OkExample({
+    id: 21,
+    type: 'DRIVERS_LICENSE',
+    documentUrl: 'https://res.cloudinary.com/demo/image/upload/driver-licence.jpg',
+    provider: null,
+    status: 'PENDING',
+  })
   @StandardErrors()
   addLicence(@CurrentUser('id') userId: number, @Body() dto: CreateRiderLicenceDto) {
     return this.ridersService.addLicence(userId, dto);
@@ -203,9 +268,9 @@ export class RidersController {
 
   @Post('driver-license/verify')
   @ApiOperation({
-    summary: 'Automatically verify a Nigerian driver licence with Identro',
+    summary: 'Optionally verify a Nigerian driver licence with Identro',
     description:
-      'The backend supplies DRIVER_LICENSE_VERIFICATION and provider credentials. Explicit rider consent and an idempotency key are mandatory.',
+      'Optional provider-verification route; it is not required for the primary manual image-review flow. The backend supplies DRIVER_LICENSE_VERIFICATION and provider credentials. Explicit rider consent and an idempotency key are mandatory.',
   })
   @OkExample({
     id: 21,
@@ -298,6 +363,46 @@ export class RidersController {
     return this.ridersService.addBankAccount(userId, dto);
   }
 
+  @Delete('bank-accounts/:id')
+  @ApiOperation({
+    summary: 'Remove an owned rider payout bank account',
+    description:
+      'If the removed account is primary, the oldest remaining verified account is automatically promoted.',
+  })
+  @ApiParam({ name: 'id', example: 30 })
+  @OkExample({ success: true, message: 'Bank account removed successfully.' })
+  @StandardErrors()
+  removeBankAccount(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) accountId: number,
+  ) {
+    return this.ridersService.removeBankAccount(userId, accountId);
+  }
+
+  @Patch('bank-accounts/:id/primary')
+  @ApiOperation({ summary: 'Set an owned verified bank account as the primary payout account' })
+  @ApiParam({ name: 'id', example: 30 })
+  @OkExample({
+    id: 30,
+    riderId: 2,
+    bankCode: '044',
+    bankName: 'Access Bank',
+    accountNumber: '0123456789',
+    accountName: 'Okey Joy Chidimma',
+    verificationStatus: 'APPROVED',
+    isPrimary: true,
+    updatedAt: '2026-10-13T12:00:00.000Z',
+  })
+  @StandardErrors()
+  setPrimaryBankAccount(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) accountId: number,
+    @Body() _dto: SetPrimaryBankAccountDto,
+  ) {
+    void _dto;
+    return this.ridersService.setPrimaryBankAccount(userId, accountId);
+  }
+
   @Post('guarantors')
   @ApiOperation({ summary: 'Add a guarantor to rider onboarding' })
   @OkExample({ id: 40, fullName: 'John Guarantor', relationship: 'Brother', status: 'PENDING' })
@@ -325,7 +430,7 @@ export class RidersController {
   @ApiOperation({
     summary: 'Submit or resubmit the rider application for compliance review',
     description:
-      'Requires service area, emergency contact, identity or driver licence, a started liveness-only session, an automatic licence request, motorcycle photo/plate, and registration upload. Rejected riders can correct evidence and resubmit; the previous rejection snapshot is cleared and submissionAttempt increments. UNDER_REVIEW, APPROVED, and SUSPENDED profiles cannot resubmit. A bank account is required only before withdrawal.',
+      'Requires service area, emergency contact, identity, a started liveness-only session, a clear driver-licence image, motorcycle photo/plate, and registration upload. The licence number and dates are optional; the image is reviewed by an administrator. Identro driver-licence verification is optional. Rejected riders can correct evidence and resubmit; the previous rejection snapshot is cleared and submissionAttempt increments. UNDER_REVIEW, APPROVED, and SUSPENDED profiles cannot resubmit. A bank account is required only before withdrawal.',
   })
   @OkExample({
     id: 50,
@@ -347,12 +452,51 @@ export class RidersController {
       'Always uses FACE_LIVENESS_ONLY. There is no separate face-match request and provider credentials never reach the client.',
   })
   @OkExample({
-    sdkSessionToken: '<session token returned to mobile SDK>',
+    reference: 'LIVE-ABC123',
+    sdkSessionToken: '<optional token when returned directly by Identro>',
     expiresAt: '2026-10-01T12:30:00.000Z',
   })
   @StandardErrors()
   mintKycSession(@CurrentUser('id') userId: number, @Body() dto: MintKycSessionDto) {
     return this.ridersService.mintKycSession(userId, dto);
+  }
+
+  @Post('kyc/session/:reference/credentials')
+  @ApiOperation({
+    summary: 'Get short-lived Identro capture credentials for an owned liveness session',
+    description:
+      'Used by the mobile liveness SDK. Permanent Identro merchant credentials remain on the backend.',
+  })
+  @ApiParam({ name: 'reference', example: 'LIVE-ABC123' })
+  @StandardErrors()
+  getLivenessCredentials(@CurrentUser('id') userId: number, @Param('reference') reference: string) {
+    return this.ridersService.getLivenessCredentials(userId, reference);
+  }
+
+  @Post('kyc/session/:reference/complete')
+  @ApiOperation({
+    summary: 'Complete Identro liveness and automatically store its decision',
+    description:
+      'Forward the Identro Flutter SDK completion payload (payload.toJson()). The backend sends the captured passive selfie and metadata to Identro, then stores the trusted provider decision. passed=true becomes APPROVED and passed=false becomes REJECTED; administrators do not approve liveness manually.',
+  })
+  @ApiParam({ name: 'reference', example: 'LIVE-ABC123' })
+  @OkExample({
+    id: 23,
+    reference: 'LIVE-ABC123',
+    status: 'APPROVED',
+    passed: true,
+    score: 91.24,
+    threshold: 80,
+    decision: 'PASSED',
+    verifiedAt: '2026-10-03T12:30:00.000Z',
+  })
+  @StandardErrors()
+  completeLivenessSession(
+    @CurrentUser('id') userId: number,
+    @Param('reference') reference: string,
+    @Body() dto: CompleteLivenessSessionDto,
+  ) {
+    return this.ridersService.completeLivenessSession(userId, reference, dto);
   }
 
   @Post('kyc/verify-document')
@@ -410,11 +554,18 @@ export class RidersController {
 
   @Post('wallet/withdraw')
   @ApiOperation({
-    summary: "Request a withdrawal to the rider's primary bank account",
+    summary: 'Request a withdrawal to a selected or primary rider bank account',
     description:
-      'MANUAL mode creates a pending request for admin processing. AUTO mode triggers an immediate Paystack transfer.',
+      'Provide bankAccountId to select an owned verified payout account. When omitted, the primary account is used. MANUAL mode creates a pending request for admin processing. AUTO mode triggers an immediate Paystack transfer.',
   })
-  @OkExample({ id: 1, amount: 5000, status: 'PENDING', mode: 'MANUAL', bankName: 'GTBank' })
+  @OkExample({
+    id: 1,
+    amount: 5000,
+    status: 'PENDING',
+    mode: 'MANUAL',
+    bankName: 'GTBank',
+    accountNumber: '0123456789',
+  })
   @StandardErrors()
   requestWithdrawal(@CurrentUser('id') userId: number, @Body() dto: RiderWithdrawDto) {
     return this.riderWallet.requestWithdrawal(userId, dto);

@@ -21,6 +21,9 @@ flowchart LR
     Purse[Purse Superstore Backend]
 
     Paystack[Paystack]
+    Klump[Klump BNPL]
+    FCM[Firebase Cloud Messaging]
+    Passkeys[Platform passkeys / WebAuthn]
     Identity[Identro and QoreID]
     Google[Google Identity]
     Cloudinary[Cloudinary]
@@ -32,6 +35,9 @@ flowchart LR
     Staff -->|Review and administer| Purse
 
     Purse <-->|Payments, transfers, webhooks| Paystack
+    Purse <-->|BNPL verification and signed webhooks| Klump
+    Purse -->|Background push| FCM
+    Customer <-->|Public-key challenge response| Passkeys
     Purse <-->|Identity and business verification| Identity
     Purse <-->|Social authentication| Google
     Purse <-->|Media storage| Cloudinary
@@ -117,7 +123,7 @@ flowchart TB
     subgraph Adapters[Infrastructure adapters]
         Prisma[Prisma data access]
         RedisClient[Redis client]
-        ProviderClients[Paystack · Identro · QoreID · Google · Cloudinary · SMTP]
+        ProviderClients[Paystack · Klump · Identro · QoreID · Google · Cloudinary · SMTP]
     end
 
     Request --> Controllers
@@ -196,7 +202,7 @@ flowchart TB
         Settlements[settlements]
         Rewards[rewards]
         Referrals[referrals]
-        BNPL[bnpl: rollout paused]
+        BNPL[bnpl: Klump provider integration]
     end
 
     subgraph Communication[Communication]
@@ -227,18 +233,19 @@ flowchart TB
 
 ### Important module dependencies
 
-| Module          | Depends on                        | Reason                                                 |
-| --------------- | --------------------------------- | ------------------------------------------------------ |
-| `auth`          | Redis, RBAC, mail                 | Sessions, access calculation, OTP and account email    |
-| `checkout`      | Cart, payments, notifications     | Validate cart, create payment intent, notify customer  |
-| `orders`        | Checkout, cart, rewards           | Place orders, maintain timeline, issue rewards         |
-| `payments`      | Cart, settlements, notifications  | Verify money movement and credit wallets/orders        |
-| `delivery`      | Redis, notifications, settlements | Track active rides and release earnings                |
-| `scanning`      | Settlements                       | Verify physical handoff before financial completion    |
-| `riders`        | Identro, QoreID                   | KYC, liveness, licence, bank, and vehicle verification |
-| `vendors`       | Identro, QoreID                   | Identity and business verification                     |
-| `stores`        | QoreID                            | Store and CAC verification                             |
-| `notifications` | Mail                              | In-app and email delivery preferences                  |
+| Module          | Depends on                        | Reason                                                                    |
+| --------------- | --------------------------------- | ------------------------------------------------------------------------- |
+| `auth`          | Redis, RBAC, mail                 | Sessions, access calculation, OTP and account email                       |
+| `checkout`      | Cart, payments, notifications     | Validate cart, create payment intent, notify customer                     |
+| `orders`        | Checkout, cart, rewards           | Place orders, maintain timeline, issue rewards                            |
+| `payments`      | Cart, settlements, notifications  | Verify money movement and credit wallets/orders                           |
+| `bnpl`          | Checkout, payments, Klump         | Initialize BNPL checkout, verify transactions, and process signed events  |
+| `delivery`      | Redis, notifications, settlements | Track active rides and release earnings                                   |
+| `scanning`      | Settlements                       | Verify physical handoff before financial completion                       |
+| `riders`        | Identro, QoreID                   | KYC, liveness, licence, bank, and vehicle verification                    |
+| `vendors`       | Identro, QoreID                   | Identity and business verification                                        |
+| `stores`        | QoreID                            | Store and CAC verification                                                |
+| `notifications` | Mail, Socket.IO, FCM              | Durable in-app, foreground realtime, push, and email delivery preferences |
 
 ## 5. Checkout, payment, and fulfilment flow
 
@@ -251,6 +258,7 @@ sequenceDiagram
     participant DB as MySQL via Prisma
     participant Payments as Payments service
     participant Paystack
+    participant Klump
     participant Orders as Order service
     participant Notify as Notifications
     participant Store as Store portal
@@ -270,6 +278,12 @@ sequenceDiagram
         Paystack-->>Customer: Hosted payment page
         Paystack->>Payments: Signed webhook
         Payments->>DB: Verify and record payment idempotently
+    else Klump BNPL
+        API->>Klump: Open provider checkout with server-calculated order data
+        Klump-->>Customer: Eligibility, instalment agreement, and repayment setup
+        Klump->>API: Signed transaction webhook
+        API->>Klump: Verify reference, amount, currency, and environment
+        API->>DB: Record verified provider transaction idempotently
     end
 
     Payments->>Orders: Confirm funded orders

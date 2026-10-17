@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -59,11 +60,12 @@ export class StoreCampaignDto {
 
 export class StoreOrderQueryDto {
   @ApiPropertyOptional({ default: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
-  @ApiPropertyOptional({ default: 15, maximum: 100 })
+  @ApiPropertyOptional({ default: 15, maximum: 15 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(15)
   limit = 15;
   @ApiPropertyOptional({ example: 'PREPARING' }) @IsOptional() @IsString() status?: string;
 }

@@ -34,10 +34,13 @@ export class CreateCheckoutDto {
   @ValidateNested()
   @Type(() => CheckoutAddressDto)
   address?: CheckoutAddressDto;
-  @ApiPropertyOptional({ enum: ['card', 'bank_transfer', 'wallet'], default: 'card' })
+  @ApiPropertyOptional({
+    enum: ['card', 'bank_transfer', 'wallet', 'klump_bnpl'],
+    default: 'card',
+  })
   @IsOptional()
-  @IsIn(['card', 'bank_transfer', 'wallet'])
-  paymentMethod?: 'card' | 'bank_transfer' | 'wallet';
+  @IsIn(['card', 'bank_transfer', 'wallet', 'klump_bnpl'])
+  paymentMethod?: 'card' | 'bank_transfer' | 'wallet' | 'klump_bnpl';
 }
 
 export class PlaceOrderDto extends OmitType(CreateCheckoutDto, [

@@ -78,6 +78,22 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(`Could not reconcile payment ${payment.transactionRef}`, error);
         }
       }
+      const refunds = this.prisma.refund
+        ? await this.prisma.refund.findMany({
+            where: { status: { in: ['PENDING', 'PROCESSING'] } },
+            orderBy: { createdAt: 'asc' },
+            take: 25,
+            select: { id: true },
+          })
+        : [];
+      for (const refund of refunds) {
+        try {
+          await this.processRefund(refund.id);
+        } catch (error) {
+          counts.errors++;
+          this.logger.error(`Could not reconcile refund ${refund.id}`, error);
+        }
+      }
       return counts;
     } finally {
       this.reconciling = false;
@@ -302,6 +318,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         } else {
           paymentId = await this.completeDedicatedAccountFunding(reference);
         }
+      } else if (eventType.startsWith('refund.')) {
+        const refund = await this.applyRefundWebhook(eventType, data ?? {});
+        paymentId = refund.paymentId;
       } else if (eventType === 'dedicatedaccount.assign.success') {
         await this.completeDedicatedAccountAssignment(data ?? {});
       } else if (eventType === 'dedicatedaccount.assign.failed') {
@@ -341,6 +360,261 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return { received: true };
   }
 
+  async processRefund(id: number) {
+    const refund = await this.prisma.refund.findUnique({
+      where: { id },
+      include: { payment: true, order: true },
+    });
+    if (!refund) throw new NotFoundException('Refund not found.');
+    if (refund.status === 'SUCCEEDED' || refund.provider === 'MANUAL') return refund;
+    if (refund.provider === 'KLUMP') {
+      if (refund.status === 'MANUAL_REVIEW') return refund;
+      const updated = await this.prisma.refund.update({
+        where: { id },
+        data: {
+          status: 'MANUAL_REVIEW',
+          failureReason:
+            'Complete the customer refund in the Klump merchant dashboard, then record its reference here.',
+        },
+      });
+      await this.notifyRefund(updated.id);
+      return updated;
+    }
+    if (refund.status === 'PROCESSING') {
+      if (!refund.providerRefundId) return refund;
+      const provider = await this.paystack.fetchRefund(refund.providerRefundId);
+      const providerStatus = String(provider.status ?? 'processing').toLowerCase();
+      const status =
+        providerStatus === 'processed'
+          ? 'SUCCEEDED'
+          : providerStatus === 'failed'
+            ? 'FAILED'
+            : providerStatus === 'needs-attention'
+              ? 'NEEDS_ATTENTION'
+              : 'PROCESSING';
+      const updated = await this.prisma.refund.update({
+        where: { id },
+        data: {
+          status,
+          providerPayload: provider as Prisma.InputJsonValue,
+          completedAt: status === 'SUCCEEDED' ? new Date() : null,
+          failureReason:
+            status === 'FAILED' ? String(provider.reason ?? 'Provider refund failed.') : null,
+        },
+      });
+      if (status === 'SUCCEEDED') await this.syncPaymentRefundStatus(updated.paymentId);
+      if (status !== 'PROCESSING') await this.notifyRefund(updated.id);
+      return updated;
+    }
+    if (!refund.payment.transactionRef)
+      throw new ConflictException('The original payment reference is unavailable.');
+
+    const claimed = await this.prisma.refund.updateMany({
+      where: { id, status: 'PENDING' },
+      data: { status: 'PROCESSING', processingAt: new Date(), failureReason: null },
+    });
+    if (!claimed.count) return refund;
+    try {
+      const provider = await this.paystack.createRefund({
+        transaction: refund.payment.transactionRef,
+        amount: refund.amount,
+        currency: refund.currency,
+        customerNote: `Refund for ${refund.order.orderNumber}`,
+        merchantNote: refund.idempotencyKey,
+      });
+      const providerId = provider.id === undefined ? null : String(provider.id);
+      const providerStatus = String(provider.status ?? 'processing').toLowerCase();
+      const status =
+        providerStatus === 'processed'
+          ? 'SUCCEEDED'
+          : providerStatus === 'needs-attention'
+            ? 'NEEDS_ATTENTION'
+            : 'PROCESSING';
+      const updated = await this.prisma.refund.update({
+        where: { id },
+        data: {
+          providerRefundId: providerId,
+          status,
+          providerPayload: provider as Prisma.InputJsonValue,
+          completedAt: status === 'SUCCEEDED' ? new Date() : null,
+        },
+      });
+      if (status === 'SUCCEEDED') await this.syncPaymentRefundStatus(updated.paymentId);
+      await this.notifyRefund(updated.id);
+      return updated;
+    } catch (error) {
+      const failureReason = error instanceof Error ? error.message : 'Refund request failed.';
+      await this.prisma.refund.update({
+        where: { id },
+        data: { status: 'FAILED', failureReason },
+      });
+      await this.notifyRefund(id);
+      throw error;
+    }
+  }
+
+  private async applyRefundWebhook(eventType: string, data: Record<string, unknown>) {
+    const providerId = data.id === undefined ? undefined : String(data.id);
+    const merchantNote = typeof data.merchant_note === 'string' ? data.merchant_note : undefined;
+    const refund = await this.prisma.refund.findFirst({
+      where: {
+        OR: [
+          ...(providerId ? [{ providerRefundId: providerId }] : []),
+          ...(merchantNote ? [{ idempotencyKey: merchantNote }] : []),
+        ],
+      },
+    });
+    if (!refund) throw new NotFoundException('Refund webhook does not match a known refund.');
+    const status =
+      eventType === 'refund.processed'
+        ? 'SUCCEEDED'
+        : eventType === 'refund.failed'
+          ? 'FAILED'
+          : eventType === 'refund.needs-attention'
+            ? 'NEEDS_ATTENTION'
+            : 'PROCESSING';
+    const updated = await this.prisma.refund.update({
+      where: { id: refund.id },
+      data: {
+        status,
+        providerRefundId: providerId ?? refund.providerRefundId,
+        providerPayload: data as Prisma.InputJsonValue,
+        failureReason:
+          status === 'FAILED' ? String(data.reason ?? 'Provider refund failed.') : null,
+        completedAt: status === 'SUCCEEDED' ? new Date() : null,
+      },
+    });
+    if (status === 'SUCCEEDED') await this.syncPaymentRefundStatus(updated.paymentId);
+    await this.notifyRefund(updated.id);
+    return updated;
+  }
+
+  private async syncPaymentRefundStatus(paymentId: number) {
+    const [payment, totals] = await Promise.all([
+      this.prisma.payment.findUniqueOrThrow({ where: { id: paymentId } }),
+      this.prisma.refund.aggregate({
+        where: { paymentId, status: 'SUCCEEDED' },
+        _sum: { amount: true },
+      }),
+    ]);
+    const refunded = totals._sum.amount ?? new Prisma.Decimal(0);
+    await this.prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: refunded.gte(payment.amount) ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
+    });
+  }
+
+  private async notifyRefund(id: number) {
+    const refund = await this.prisma.refund.findUniqueOrThrow({
+      where: { id },
+      include: { order: true },
+    });
+    await this.notifications.notifyUser({
+      userId: refund.userId,
+      type: refund.status === 'FAILED' ? 'PAYMENT_FAILED' : 'ORDER_CANCELLED',
+      title:
+        refund.status === 'SUCCEEDED'
+          ? 'Refund completed'
+          : refund.status === 'MANUAL_REVIEW'
+            ? 'Refund under review'
+            : refund.status === 'NEEDS_ATTENTION'
+              ? 'Refund needs attention'
+              : refund.status === 'FAILED'
+                ? 'Refund failed'
+                : 'Refund processing',
+      message: `Refund for order ${refund.order.orderNumber} is ${refund.status.toLowerCase().replace('_', ' ')}.`,
+      data: { refundId: refund.id, orderId: refund.orderId, status: refund.status },
+    });
+  }
+
+  async retryRefund(id: number) {
+    const refund = await this.prisma.refund.findUnique({ where: { id } });
+    if (refund?.provider === 'KLUMP') {
+      throw new ConflictException('Klump refunds must be completed through manual review.');
+    }
+    const retryable = await this.prisma.refund.updateMany({
+      where: { id, status: 'FAILED' },
+      data: { status: 'PENDING', failureReason: null, processingAt: null },
+    });
+    if (!retryable.count) {
+      throw new ConflictException('Only failed refunds can be retried.');
+    }
+    return this.processRefund(id);
+  }
+
+  async completeManualRefund(id: number, providerReference: string, actorId: number) {
+    const refund = await this.prisma.refund.findUnique({
+      where: { id },
+      include: { order: true },
+    });
+    if (!refund) throw new NotFoundException('Refund not found.');
+    if (refund.provider !== 'KLUMP') {
+      throw new ConflictException('Only Klump refunds use this manual completion workflow.');
+    }
+    if (refund.status === 'SUCCEEDED') return refund;
+    if (refund.status !== 'MANUAL_REVIEW') {
+      throw new ConflictException('Only a Klump refund under manual review can be completed.');
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const completed = await tx.refund.update({
+        where: { id },
+        data: {
+          status: 'SUCCEEDED',
+          providerRefundId: providerReference,
+          providerPayload: {
+            source: 'KLUMP_MERCHANT_DASHBOARD',
+            recordedByStaffId: actorId,
+            recordedAt: new Date().toISOString(),
+          },
+          processingAt: refund.processingAt ?? new Date(),
+          completedAt: new Date(),
+          failureReason: null,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          staffActorId: actorId,
+          action: 'KLUMP_REFUND_COMPLETED',
+          permission: 'refunds.manage',
+          entity: 'Refund',
+          entityId: String(id),
+          changes: {
+            orderId: refund.orderId,
+            providerReference,
+            previousStatus: refund.status,
+            status: 'SUCCEEDED',
+          },
+        },
+      });
+      return completed;
+    });
+    await this.syncPaymentRefundStatus(updated.paymentId);
+    await this.notifyRefund(updated.id);
+    return updated;
+  }
+
+  async resolveRefundAttention(id: number, input: { accountNumber: string; bankId: string }) {
+    const refund = await this.prisma.refund.findUnique({ where: { id } });
+    if (!refund || refund.status !== 'NEEDS_ATTENTION' || !refund.providerRefundId) {
+      throw new ConflictException('Only a refund needing attention can accept bank details.');
+    }
+    const provider = await this.paystack.retryRefundWithCustomerDetails(
+      refund.providerRefundId,
+      input,
+    );
+    const updated = await this.prisma.refund.update({
+      where: { id },
+      data: {
+        status: 'PROCESSING',
+        processingAt: new Date(),
+        failureReason: null,
+        providerPayload: provider as Prisma.InputJsonValue,
+      },
+    });
+    await this.notifyRefund(id);
+    return updated;
+  }
+
   async verifyReference(reference: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { transactionRef: reference },
@@ -348,7 +622,22 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     });
     if (!payment || payment.provider !== 'PAYSTACK')
       throw new NotFoundException('Payment not found.');
+    if (['REFUNDED', 'PARTIALLY_REFUNDED'].includes(payment.status)) {
+      return { status: payment.status, paymentGroupId: payment.groups[0]?.id };
+    }
     if (payment.status === 'PAID') {
+      const incomplete = payment.groups.filter(
+        (group) =>
+          group.activeCartId != null || (group.status !== undefined && group.status !== 'PAID'),
+      );
+      if (incomplete.length) {
+        await this.prisma.$transaction(async (tx) => {
+          for (const group of incomplete) {
+            await this.cart.lock(tx, group.userId);
+            await this.completeGroup(tx, group.id);
+          }
+        });
+      }
       await this.dispatchGroupConfirmations(payment.groups.map((group) => group.id));
       return { status: payment.status, paymentGroupId: payment.groups[0]?.id };
     }
@@ -419,24 +708,40 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           where: { id: payment.id },
           data: { status: 'FAILED', failureReason: 'Bank transfer account expired.' },
         });
+        await this.notifyPaymentFailure(
+          meta.userId!,
+          payment.id,
+          reference,
+          'The temporary bank-transfer account expired before payment was confirmed.',
+        );
         return { status: 'FAILED', paymentGroupId: undefined };
       }
       if (verified.status === 'success') {
-        await this.prisma.$transaction(async (tx) => {
+        const credited = await this.prisma.$transaction(async (tx) => {
           await tx.$queryRaw(
             Prisma.sql`SELECT id FROM Payment WHERE id = ${payment.id} FOR UPDATE`,
           );
           const current = await tx.payment.findUniqueOrThrow({ where: { id: payment.id } });
-          if (current.status === 'PAID') return;
+          if (current.status === 'PAID') return false;
           await tx.payment.update({
             where: { id: payment.id },
             data: { status: 'PAID', paidAt: new Date() },
           });
           await this.completeWalletTopup(tx, payment.id, meta.userId!, payment.amount);
+          return true;
         });
+        if (credited) {
+          await this.notifyWalletFunded(meta.userId!, payment.id, reference, payment.amount);
+        }
         return { status: 'PAID', paymentGroupId: undefined };
       }
       await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'FAILED' } });
+      await this.notifyPaymentFailure(
+        meta.userId!,
+        payment.id,
+        reference,
+        'Your wallet top-up was not successful.',
+      );
       return { status: 'FAILED', paymentGroupId: undefined };
     }
 
@@ -492,6 +797,18 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     );
     if (outcome === 'success') {
       await this.dispatchGroupConfirmations(payment.groups.map((group) => group.id));
+    } else if (payment.status !== 'FAILED') {
+      await Promise.allSettled(
+        [...new Set(payment.groups.map((group) => group.userId))].map((userId) =>
+          this.notifyPaymentFailure(
+            userId,
+            payment.id,
+            reference,
+            'Your order payment was not successful. Please try again.',
+            payment.groups[0]?.id,
+          ),
+        ),
+      );
     }
     return {
       status: outcome === 'success' ? 'PAID' : 'FAILED',
@@ -541,6 +858,12 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (error) {
       await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'FAILED' } });
+      await this.notifyPaymentFailure(
+        userId,
+        payment.id,
+        reference,
+        'Your wallet top-up could not be started.',
+      );
       throw error;
     }
   }
@@ -600,6 +923,12 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         where: { id: payment.id },
         data: { status: 'FAILED' },
       });
+      await this.notifyPaymentFailure(
+        userId,
+        payment.id,
+        reference,
+        'Your bank-transfer wallet top-up could not be started.',
+      );
       throw error;
     }
   }
@@ -821,18 +1150,44 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         description: 'Wallet top-up via Paystack',
       },
     });
-    await tx.notification.create({
-      data: {
-        recipientId: userId,
-        type: 'PAYMENT_RECEIVED',
-        title: 'Wallet funded',
-        message: `\u20a6${Number(amount).toLocaleString('en-NG', { minimumFractionDigits: 2 })} has been added to your wallet.`,
-        data: { paymentId, amount: amount.toFixed(2) },
-      },
+  }
+
+  private notifyWalletFunded(
+    userId: number,
+    paymentId: number,
+    reference: string,
+    amount: Prisma.Decimal,
+  ) {
+    return this.notifications.notifyUser({
+      userId,
+      type: 'PAYMENT_RECEIVED',
+      title: 'Wallet funded',
+      message: `₦${amount.toNumber().toLocaleString('en-NG', { minimumFractionDigits: 2 })} has been added to your wallet.`,
+      data: { paymentId, amount: amount.toFixed(2) },
+      eventKey: `wallet-funded:${reference}`,
+    });
+  }
+
+  private notifyPaymentFailure(
+    userId: number,
+    paymentId: number,
+    reference: string,
+    message: string,
+    paymentGroupId?: number,
+  ) {
+    return this.notifications.notifyUser({
+      userId,
+      type: 'PAYMENT_FAILED',
+      title: 'Payment unsuccessful',
+      message,
+      priority: 'HIGH',
+      data: { paymentId, paymentGroupId: paymentGroupId ?? null, reference },
+      eventKey: `payment-failed:${paymentId}:${userId}`,
     });
   }
 
   async walletTransactions(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
     if (!wallet) return { balance: 0, currency: 'NGN', items: [], total: 0, page, limit, pages: 0 };
     const skip = (page - 1) * limit;
@@ -908,6 +1263,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async walletWithdrawals(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const [items, total] = await Promise.all([
       this.prisma.withdrawal.findMany({
         where: { userId },
@@ -925,21 +1281,23 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       where: { id },
       include: { allocations: { include: { order: true } } },
     });
-    if (group.status === 'PAID') return;
+    if (group.status === 'PAID' && group.activeCartId == null) return;
     if (group.status === 'FAILED') throw new ConflictException('Cannot pay a released checkout.');
     for (const { order } of group.allocations) {
-      if (order.currentStatus !== 'ORDER_RECEIVED')
-        throw new ConflictException('Order is no longer payable.');
-      await tx.order.update({ where: { id: order.id }, data: { currentStatus: 'CONFIRMED' } });
-      await tx.orderStatusHistory.create({
-        data: {
-          orderId: order.id,
-          fromStatus: 'ORDER_RECEIVED',
-          toStatus: 'CONFIRMED',
-          reason: 'Payment or approved financing confirmed.',
-        },
-      });
-      await this.settlements.settleOrder(order.id, tx);
+      if (order.currentStatus === 'ORDER_RECEIVED') {
+        await tx.order.update({ where: { id: order.id }, data: { currentStatus: 'CONFIRMED' } });
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: order.id,
+            fromStatus: 'ORDER_RECEIVED',
+            toStatus: 'CONFIRMED',
+            reason: 'Payment or approved financing confirmed.',
+          },
+        });
+        await this.settlements.settleOrder(order.id, tx);
+      } else if (order.currentStatus === 'CANCELLED') {
+        throw new ConflictException('Cancelled order cannot be finalized as paid.');
+      }
       await tx.orderConfirmationOutbox.upsert({
         where: { orderId: order.id },
         update: {},
@@ -1176,10 +1534,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         },
       },
     });
-    await this.prisma.$transaction(async (tx) => {
+    const credited = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM Payment WHERE id = ${payment.id} FOR UPDATE`);
       const current = await tx.payment.findUniqueOrThrow({ where: { id: payment.id } });
-      if (current.status === 'PAID') return;
+      if (current.status === 'PAID') return false;
       const wallet = await tx.wallet.upsert({
         where: { userId: fundingAccount.userId },
         create: { userId: fundingAccount.userId },
@@ -1208,19 +1566,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         where: { id: payment.id },
         data: { status: 'PAID', paidAt: new Date() },
       });
-      await tx.notification.upsert({
-        where: { eventKey: `wallet-funded:${reference}` },
-        update: {},
-        create: {
-          eventKey: `wallet-funded:${reference}`,
-          recipientId: fundingAccount.userId,
-          type: 'PAYMENT_RECEIVED',
-          title: 'Wallet funded',
-          message: `₦${amount.toNumber().toLocaleString('en-NG', { minimumFractionDigits: 2 })} has been added to your wallet.`,
-          data: { paymentId: payment.id, amount: amount.toFixed(2), method: 'bank_transfer' },
-        },
-      });
+      return true;
     });
+    if (credited) {
+      await this.notifyWalletFunded(fundingAccount.userId, payment.id, reference, amount);
+    }
     return payment.id;
   }
 
@@ -1243,6 +1593,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       await tx.order.update({ where: { id: order.id }, data: { currentStatus: 'CANCELLED' } });
       await tx.delivery.updateMany({ where: { orderId: order.id }, data: { status: 'CANCELLED' } });
       await tx.pickup.updateMany({ where: { orderId: order.id }, data: { status: 'cancelled' } });
+      await tx.orderQrCredential.updateMany({
+        where: { orderId: order.id, status: 'ACTIVE' },
+        data: { status: 'REVOKED', revokedAt: new Date() },
+      });
       await tx.orderStatusHistory.create({
         data: {
           orderId: order.id,

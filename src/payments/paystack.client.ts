@@ -168,4 +168,43 @@ export class PaystackClient {
       `/transaction/verify/${encodeURIComponent(reference)}`,
     );
   }
+
+  createRefund(input: {
+    transaction: string;
+    amount: Prisma.Decimal.Value;
+    currency: string;
+    customerNote: string;
+    merchantNote: string;
+  }) {
+    return this.request<Record<string, unknown>>('/refund', {
+      method: 'POST',
+      body: JSON.stringify({
+        transaction: input.transaction,
+        amount: kobo(input.amount),
+        currency: input.currency,
+        customer_note: input.customerNote,
+        merchant_note: input.merchantNote,
+      }),
+    });
+  }
+
+  fetchRefund(id: string) {
+    return this.request<Record<string, unknown>>(`/refund/${encodeURIComponent(id)}`);
+  }
+
+  retryRefundWithCustomerDetails(id: string, input: { accountNumber: string; bankId: string }) {
+    return this.request<Record<string, unknown>>(
+      `/refund/retry_with_customer_details/${encodeURIComponent(id)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          refund_account_details: {
+            currency: 'NGN',
+            account_number: input.accountNumber,
+            bank_id: input.bankId,
+          },
+        }),
+      },
+    );
+  }
 }

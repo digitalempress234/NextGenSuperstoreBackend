@@ -323,7 +323,9 @@ export class CheckoutService {
         ? 'WALLET'
         : input.paymentMethod === 'bank_transfer'
           ? 'BANK_TRANSFER'
-          : 'CARD');
+          : input.paymentMethod === 'klump_bnpl'
+            ? 'KLUMP_BNPL'
+            : 'CARD');
     const orders = [];
     for (const order of quote.orders) {
       for (const item of order.items) {

@@ -13,6 +13,12 @@ import { CheckoutService } from '../src/checkout/checkout.service';
 import { CheckoutSettingsService } from '../src/checkout/checkout-settings.service';
 import { BnplAdminController, BnplController } from '../src/bnpl/bnpl.controller';
 import { BnplService } from '../src/bnpl/bnpl.service';
+import {
+  KlumpAdminController,
+  KlumpController,
+  KlumpWebhookController,
+} from '../src/bnpl/klump.controller';
+import { KlumpService } from '../src/bnpl/klump.service';
 import { OrdersController } from '../src/orders/orders.controller';
 import { OrdersService } from '../src/orders/orders.service';
 import { PaymentsController } from '../src/payments/payments.controller';
@@ -23,6 +29,8 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { AddressesController } from '../src/users/addresses.controller';
 import { UsersService } from '../src/users/users.service';
 import { StaffJwtGuard } from '../src/staff/staff-jwt.guard';
+import { DeliveryController } from '../src/delivery/delivery.controller';
+import { DeliveryService } from '../src/delivery/delivery.service';
 
 const controllers = [
   CartController,
@@ -31,22 +39,28 @@ const controllers = [
   PickupStationsController,
   BnplController,
   BnplAdminController,
+  KlumpController,
+  KlumpWebhookController,
+  KlumpAdminController,
   OrdersController,
   PaymentsController,
   PaymentWebhookController,
   WalletController,
   AddressesController,
+  DeliveryController,
 ];
 const services = [
   CartService,
   CheckoutService,
   CheckoutSettingsService,
   BnplService,
+  KlumpService,
   OrdersService,
   PaymentsService,
   PrismaService,
   UsersService,
   ConfigService,
+  DeliveryService,
 ];
 
 @Module({ controllers, providers: services.map((service) => ({ provide: service, useValue: {} })) })
@@ -96,15 +110,29 @@ describe('Checkout OpenAPI contract shared by Swagger and Scalar', () => {
       expect(operation('/wallet/balance', 'get')).toBeDefined();
       expect(operation('/orders', 'post')).toBeDefined();
       expect(operation('/orders/{id}/track', 'get')).toBeDefined();
+      expect(operation('/deliveries/mine', 'get')).toBeDefined();
+      expect(
+        operation('/deliveries/{id}/status', 'patch')?.requestBody?.content?.['application/json'],
+      ).toBeDefined();
+      expect(JSON.stringify(document.components?.schemas?.UpdateDeliveryStatusDto)).toContain(
+        'ARRIVED_AT_CUSTOMER',
+      );
       expect(operation('/payments/callback', 'get')).toBeDefined();
       expect(operation('/webhooks/payment', 'post')).toBeDefined();
       expect(operation('/bnpl/installment-plans', 'get')).toBeDefined();
+      expect(operation('/bnpl/klump/initialize', 'post')).toBeDefined();
+      expect(operation('/bnpl/klump/verify', 'post')).toBeDefined();
+      expect(operation('/bnpl/klump/transactions/{merchantReference}', 'get')).toBeDefined();
+      expect(operation('/webhooks/klump', 'post')).toBeDefined();
       const apply = operation('/bnpl/apply', 'post');
       expect(apply?.requestBody?.content?.['multipart/form-data']).toBeDefined();
       expect(apply?.security).toContainEqual({ purse_access_token: [] });
       expect(operation('/admin/bnpl/plans', 'get')?.security).toContainEqual({
         purse_staff_token: [],
       });
+      expect(
+        operation('/admin/bnpl/klump/transactions/{reference}/resend-webhook', 'post')?.security,
+      ).toContainEqual({ purse_staff_token: [] });
       expect(document.components?.securitySchemes).toHaveProperty('purse_access_token');
       expect(document.components?.securitySchemes).toHaveProperty('purse_staff_token');
     } finally {

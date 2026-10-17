@@ -81,7 +81,7 @@ describe('Paystack dedicated wallet funding', () => {
       paystack as unknown as PaystackClient,
       {} as SettlementsService,
       {} as CartService,
-      {} as NotificationsService,
+      { notifyUser: jest.fn() } as unknown as NotificationsService,
     );
     const result = service.topupWalletByTransfer(7, decimal(5000));
     await expect(result).resolves.toEqual(
@@ -151,7 +151,7 @@ describe('Paystack dedicated wallet funding', () => {
       paystack as unknown as PaystackClient,
       {} as SettlementsService,
       {} as CartService,
-      {} as NotificationsService,
+      { notifyUser: jest.fn() } as unknown as NotificationsService,
     );
 
     await expect(
@@ -255,7 +255,7 @@ describe('Checkout completion compatibility', () => {
       {} as PaystackClient,
       {} as SettlementsService,
       {} as CartService,
-      { processOrderConfirmations: jest.fn() } as never,
+      { processOrderConfirmations: jest.fn(), notifyUser: jest.fn() } as never,
     );
     const verify = jest.spyOn(service, 'verifyReference');
     verify.mockResolvedValueOnce({ status: 'PENDING', paymentGroupId: 1 });
@@ -513,7 +513,7 @@ describe('Payment verification', () => {
       paystack as unknown as PaystackClient,
       {} as SettlementsService,
       { lock: jest.fn() } as unknown as CartService,
-      { processOrderConfirmations: jest.fn() } as never,
+      { processOrderConfirmations: jest.fn(), notifyUser: jest.fn() } as never,
     );
     const complete = jest.spyOn(service, 'completeGroup').mockResolvedValue();
     const fail = jest.spyOn(service, 'failGroup').mockResolvedValue();

@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { ReturnOrderDto } from './dto/order.dto';
@@ -11,6 +12,7 @@ import { ConflictException } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentsService } from '../payments/payments.service';
 import type { AuthenticatedUser } from '../common/types';
 import { canTransitionOrder, STORE_MANAGED_ORDER_STATUSES } from './order-status';
 import {
@@ -19,6 +21,7 @@ import {
   DELIVERY_SOCKET_NAMESPACE,
   DELIVERY_SOCKET_PATH,
 } from '../delivery/delivery-websocket.contract';
+import { DeliveryService } from '../delivery/delivery.service';
 
 function screenStatus(status: OrderStatus) {
   if (status === 'ORDER_RECEIVED' || status === 'CONFIRMED') return 'pending';
@@ -34,6 +37,8 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly cart: CartService,
+    @Optional() private readonly payments?: PaymentsService,
+    @Optional() private readonly deliveries?: DeliveryService,
   ) {}
 
   mine(
@@ -42,6 +47,7 @@ export class OrdersService {
     limit = 15,
     status?: 'all' | 'pending' | 'in_progress' | 'ready_for_pickup' | 'delivered' | 'cancelled',
   ) {
+    limit = Math.min(15, Math.max(1, limit));
     const statuses: Record<Exclude<NonNullable<typeof status>, 'all'>, OrderStatus[]> = {
       pending: ['ORDER_RECEIVED', 'CONFIRMED'],
       in_progress: ['PREPARING', 'RIDER_ASSIGNED', 'OUT_FOR_DELIVERY'],
@@ -65,6 +71,7 @@ export class OrdersService {
           store: true,
           delivery: { include: { statusUpdates: true } },
           pickup: true,
+          refund: true,
           statusHistory: true,
         },
         orderBy: { createdAt: 'desc' },
@@ -96,6 +103,7 @@ export class OrdersService {
         store: true,
         delivery: { include: { statusUpdates: true } },
         pickup: true,
+        refund: true,
         statusHistory: true,
       },
     });
@@ -199,6 +207,7 @@ export class OrdersService {
             deliveryState: true,
             assignedAt: true,
             pickedUpAt: true,
+            arrivedAt: true,
             deliveredAt: true,
             trackingMapUrl: true,
             statusUpdates: {
@@ -392,17 +401,25 @@ export class OrdersService {
         statusLabel: updatedOrder.currentStatus,
         message: reason ?? '',
       },
+      eventKey: `order-status:${updatedOrder.id}:${updatedOrder.currentStatus}`,
     });
+
+    if (updatedOrder.currentStatus === 'READY_FOR_PICKUP') {
+      await this.deliveries?.notifyAvailableRidersForOrder(updatedOrder.id);
+    }
 
     return updatedOrder;
   }
 
   async cancel(userId: number, id: number, reason: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM \`Order\` WHERE id = ${id} FOR UPDATE`;
       const order = await tx.order.findFirst({
         where: { id, userId },
-        include: { items: true, allocations: { include: { paymentGroup: true } } },
+        include: {
+          items: true,
+          allocations: { include: { paymentGroup: { include: { payment: true } } } },
+        },
       });
       if (!order) throw new NotFoundException('Order not found.');
       if (!['CONFIRMED', 'PREPARING'].includes(order.currentStatus))
@@ -415,6 +432,10 @@ export class OrdersService {
       await tx.order.update({ where: { id }, data: { currentStatus: 'CANCELLED' } });
       await tx.delivery.updateMany({ where: { orderId: id }, data: { status: 'CANCELLED' } });
       await tx.pickup.updateMany({ where: { orderId: id }, data: { status: 'cancelled' } });
+      await tx.orderQrCredential.updateMany({
+        where: { orderId: id, status: 'ACTIVE' },
+        data: { status: 'REVOKED', revokedAt: new Date() },
+      });
       await tx.orderStatusHistory.create({
         data: {
           orderId: id,
@@ -425,8 +446,13 @@ export class OrdersService {
         },
       });
       const allocation = order.allocations[0];
-      let refundStatus = 'manual_pending';
-      if (allocation?.paymentGroup.paymentMethod === 'WALLET') {
+      if (!allocation?.paymentGroup.paymentId) {
+        throw new ConflictException('The order payment cannot be located for refund.');
+      }
+      const isWallet = allocation.paymentGroup.paymentMethod === 'WALLET';
+      const isKlump = allocation.paymentGroup.payment?.provider === 'KLUMP';
+      let refundStatus = isKlump ? 'manual_review' : 'pending';
+      if (isWallet) {
         const wallet = await tx.wallet.upsert({
           where: { userId },
           create: { userId, balance: order.total },
@@ -442,6 +468,42 @@ export class OrdersService {
           },
         });
         refundStatus = 'refunded';
+      }
+      const refund = await tx.refund.upsert({
+        where: { orderId: id },
+        update: {},
+        create: {
+          orderId: id,
+          userId,
+          paymentId: allocation.paymentGroup.paymentId,
+          amount: allocation.amount,
+          currency: order.currency,
+          provider: isWallet ? 'MANUAL' : isKlump ? 'KLUMP' : 'PAYSTACK',
+          status: isWallet ? 'SUCCEEDED' : isKlump ? 'MANUAL_REVIEW' : 'PENDING',
+          idempotencyKey: `ORDER-REFUND-${id}`,
+          reason,
+          failureReason: isKlump
+            ? 'Complete the customer refund in the Klump merchant dashboard, then record its reference here.'
+            : null,
+          completedAt: isWallet ? new Date() : null,
+        },
+      });
+      if (refund.status === 'SUCCEEDED') {
+        const payment = await tx.payment.findUniqueOrThrow({
+          where: { id: allocation.paymentGroup.paymentId },
+        });
+        const totals = await tx.refund.aggregate({
+          where: { paymentId: payment.id, status: 'SUCCEEDED' },
+          _sum: { amount: true },
+        });
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            status: (totals._sum.amount ?? new Prisma.Decimal(0)).gte(payment.amount)
+              ? 'REFUNDED'
+              : 'PARTIALLY_REFUNDED',
+          },
+        });
       }
       const storeWallet = await tx.storeWallet.findUnique({ where: { storeId: order.storeId } });
       const settlement = await tx.storeWalletTransaction.findUnique({
@@ -467,8 +529,33 @@ export class OrdersService {
         where: { orderId: id, status: 'AVAILABLE' },
         data: { status: 'REVERSED' },
       });
-      return { orderId: id, status: 'cancelled', refundStatus };
+      if (!isWallet) refundStatus = refund.status.toLowerCase();
+      return { orderId: id, status: 'cancelled', refundStatus, refundId: refund.id };
     });
+    if (result.refundStatus === 'pending') {
+      if (!this.payments) return result;
+      try {
+        const refund = await this.payments.processRefund(result.refundId);
+        return { ...result, refundStatus: refund.status.toLowerCase() };
+      } catch {
+        return { ...result, refundStatus: 'failed' };
+      }
+    }
+    await this.notifications.notifyUser({
+      userId,
+      type: 'ORDER_CANCELLED',
+      title: result.refundStatus === 'manual_review' ? 'Refund under review' : 'Refund completed',
+      message:
+        result.refundStatus === 'manual_review'
+          ? `Your refund for cancelled order ${id} is under review and will be processed through Klump.`
+          : `Your refund for cancelled order ${id} has been returned to your wallet.`,
+      data: {
+        orderId: id,
+        refundId: result.refundId,
+        status: result.refundStatus === 'manual_review' ? 'MANUAL_REVIEW' : 'SUCCEEDED',
+      },
+    });
+    return result;
   }
 
   async requestReturn(userId: number, id: number, dto: ReturnOrderDto) {

@@ -1,5 +1,7 @@
 import { Body, Controller, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { ApiCookieAuth, ApiNoContentResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
 import { OkExample, StandardErrors } from '../common/api-docs';
@@ -12,6 +14,7 @@ import {
   ForgotPasswordDto,
   LoginDto,
   RegisterDto,
+  RefreshTokenDto,
   ResendEmailOtpDto,
   ResetPasswordDto,
   VerifyEmailOtpDto,
@@ -20,20 +23,15 @@ import {
 const ACCESS_COOKIE = 'purse_access_token';
 const REFRESH_COOKIE = 'purse_refresh_token';
 
-const cookieOptions = {
-  httpOnly: true,
-  secure: process.env.AUTH_COOKIE_SECURE === 'true',
-  sameSite: 'lax' as const,
-  path: '/purse',
-};
-
 @ApiTags('Authentication')
 @ApiCookieAuth('purse_access_token')
+@Throttle({ default: { limit: 30, ttl: 60_000 } })
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly googleAuthService: GoogleAuthService,
+    private readonly config: ConfigService,
   ) {}
 
   @Public()
@@ -82,7 +80,7 @@ export class AuthController {
     const result = await this.googleAuthService.signIn(dto.idToken);
     await this.authService.updateSessionMetadata(result.sessionId, request);
     this.setAuthCookies(response, result.accessToken, result.refreshToken);
-    return this.publicAuthResponse(result);
+    return this.publicAuthResponse(result, dto.clientType === 'MOBILE');
   }
 
   @Public()
@@ -101,7 +99,7 @@ export class AuthController {
     const result = await this.authService.login(dto);
     await this.authService.updateSessionMetadata(result.sessionId, request);
     this.setAuthCookies(response, result.accessToken, result.refreshToken);
-    return this.publicAuthResponse(result);
+    return this.publicAuthResponse(result, dto.clientType === 'MOBILE');
   }
 
   @Public()
@@ -125,14 +123,23 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @ApiCookieAuth('purse_refresh_token')
-  @ApiOperation({ summary: 'Rotate access and refresh cookies' })
+  @ApiOperation({
+    summary: 'Rotate an access/refresh session',
+    description:
+      'Web clients send the HttpOnly refresh cookie. Native clients send refreshToken and clientType=MOBILE and receive the rotated tokens in the response body.',
+  })
   @OkExample({
     user: { id: 1001, email: 'customer@example.com', roles: ['CUSTOMER'] },
     session: { authenticated: true },
   })
   @StandardErrors()
-  async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
-    const refreshToken = request.cookies?.[REFRESH_COOKIE] as string | undefined;
+  async refresh(
+    @Body() dto: RefreshTokenDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const refreshToken =
+      dto.refreshToken ?? (request.cookies?.[REFRESH_COOKIE] as string | undefined);
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh authentication cookie is missing.');
     }
@@ -140,7 +147,10 @@ export class AuthController {
     const result = await this.authService.refreshToken(refreshToken);
     await this.authService.updateSessionMetadata(result.sessionId, request);
     this.setAuthCookies(response, result.accessToken, result.refreshToken);
-    return this.publicAuthResponse(result);
+    return this.publicAuthResponse(
+      result,
+      dto.clientType === 'MOBILE' || Boolean(dto.refreshToken),
+    );
   }
 
   @Post('logout')
@@ -156,28 +166,66 @@ export class AuthController {
   }
 
   private setAuthCookies(response: Response, accessToken: string, refreshToken: string): void {
+    const options = this.cookieOptions();
+    if (options.path !== '/purse') {
+      response.clearCookie(ACCESS_COOKIE, { ...options, path: '/purse' });
+      response.clearCookie(REFRESH_COOKIE, { ...options, path: '/purse' });
+    }
     response.cookie(ACCESS_COOKIE, accessToken, {
-      ...cookieOptions,
-      maxAge: 15 * 60 * 1000,
+      ...options,
+      maxAge: this.authService.accessTokenTtlMs(),
     });
     response.cookie(REFRESH_COOKIE, refreshToken, {
-      ...cookieOptions,
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      ...options,
+      maxAge: this.authService.refreshTokenTtlMs(),
     });
   }
 
   private clearAuthCookies(response: Response): void {
-    response.clearCookie(ACCESS_COOKIE, cookieOptions);
-    response.clearCookie(REFRESH_COOKIE, cookieOptions);
+    const options = this.cookieOptions();
+    response.clearCookie(ACCESS_COOKIE, options);
+    response.clearCookie(REFRESH_COOKIE, options);
+    response.clearCookie(ACCESS_COOKIE, { ...options, path: '/purse' });
+    response.clearCookie(REFRESH_COOKIE, { ...options, path: '/purse' });
   }
 
-  private publicAuthResponse(result: Awaited<ReturnType<AuthService['login']>>) {
+  private cookieOptions() {
+    const sameSite = this.config.get<string>('AUTH_COOKIE_SAME_SITE', 'lax').toLowerCase();
+    return {
+      httpOnly: true,
+      secure:
+        this.config.get<string>('AUTH_COOKIE_SECURE') === 'true' ||
+        (this.config.get<string>('AUTH_COOKIE_SECURE') !== 'false' &&
+          this.config.get<string>('NODE_ENV') === 'production'),
+      sameSite: (['lax', 'strict', 'none'].includes(sameSite) ? sameSite : 'lax') as
+        'lax' | 'strict' | 'none',
+      path: this.config.get<string>('AUTH_COOKIE_PATH', '/'),
+      ...(this.config.get<string>('AUTH_COOKIE_DOMAIN')
+        ? { domain: this.config.get<string>('AUTH_COOKIE_DOMAIN') }
+        : {}),
+    };
+  }
+
+  private publicAuthResponse(
+    result: Awaited<ReturnType<AuthService['login']>>,
+    includeTokens = false,
+  ) {
     if (!('user' in result) || !('sessionId' in result)) {
       throw new UnauthorizedException('Authentication could not be completed.');
     }
     return {
       user: result.user,
       session: { authenticated: true },
+      ...(includeTokens
+        ? {
+            tokens: {
+              accessToken: result.accessToken,
+              refreshToken: result.refreshToken,
+              tokenType: 'Bearer',
+              expiresIn: Math.floor(this.authService.accessTokenTtlMs() / 1000),
+            },
+          }
+        : {}),
     };
   }
 }

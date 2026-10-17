@@ -1,17 +1,21 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { OrderStatus, Prisma, RefundStatus } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ADMIN_INTERVENTION_ORDER_STATUSES, canTransitionOrder } from '../orders/order-status';
 import { completeOrder } from '../orders/complete-order';
 import { assessRiderReadiness } from '../riders/rider-readiness';
+import { PaymentsService } from '../payments/payments.service';
+import { DeliveryService } from '../delivery/delivery.service';
 
 @Injectable()
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly payments?: PaymentsService,
+    @Optional() private readonly deliveries?: DeliveryService,
   ) {}
 
   async overview() {
@@ -42,7 +46,7 @@ export class AdminService {
     status: OrderStatus,
     reason: string,
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) throw new NotFoundException('Order not found.');
       if (!ADMIN_INTERVENTION_ORDER_STATUSES.includes(status)) {
@@ -56,8 +60,9 @@ export class AdminService {
         );
       }
 
+      let rewards: Awaited<ReturnType<typeof completeOrder>> | null = null;
       if (status === 'COMPLETED') {
-        await completeOrder(tx, order, undefined, `Staff intervention: ${reason}`);
+        rewards = await completeOrder(tx, order, undefined, `Staff intervention: ${reason}`);
       } else {
         await tx.order.update({
           where: { id: orderId },
@@ -86,8 +91,42 @@ export class AdminService {
           },
         },
       });
-      return tx.order.findUniqueOrThrow({ where: { id: orderId } });
+      return {
+        order: await tx.order.findUniqueOrThrow({ where: { id: orderId } }),
+        rewards,
+      };
     });
+
+    await this.notifications.notifyUser({
+      userId: result.order.userId,
+      type: 'ORDER_STATUS_UPDATE',
+      title: 'Order status updated',
+      message: `Order ${result.order.orderNumber} is now ${result.order.currentStatus}.`,
+      data: {
+        orderId: result.order.id,
+        orderNumber: result.order.orderNumber,
+        status: result.order.currentStatus,
+      },
+      eventKey: `order-status:${result.order.id}:${result.order.currentStatus}`,
+    });
+    if (status === 'READY_FOR_PICKUP') {
+      await this.deliveries?.notifyAvailableRidersForOrder(orderId);
+    }
+    if (result.rewards && (result.rewards.points > 0 || result.rewards.cashbackAmount !== '0.00')) {
+      await this.notifications.notifyUser({
+        userId: result.order.userId,
+        type: 'REWARD_UPDATE',
+        title: 'Rewards earned',
+        message: `You earned ${result.rewards.points} points and ₦${result.rewards.cashbackAmount} cashback from order ${result.order.orderNumber}.`,
+        data: {
+          orderId: result.order.id,
+          points: result.rewards.points,
+          cashbackAmount: result.rewards.cashbackAmount,
+        },
+        eventKey: `rewards-earned:${result.order.id}`,
+      });
+    }
+    return result.order;
   }
 
   private result<T>(items: T[], total: number, page: number, limit: number) {
@@ -155,6 +194,7 @@ export class AdminService {
           user: { select: { id: true, firstName: true, lastName: true, email: true } },
           store: { select: { id: true, storeName: true } },
           payment: true,
+          refund: true,
         },
         orderBy: { placedAt: 'desc' },
         skip: (paging.page - 1) * paging.limit,
@@ -177,6 +217,7 @@ export class AdminService {
         pickup: true,
         statusHistory: { orderBy: { createdAt: 'asc' } },
         returns: true,
+        refund: true,
       },
     });
     if (!item) throw new NotFoundException('Order not found.');
@@ -220,6 +261,52 @@ export class AdminService {
         : await this.prisma.withdrawal.findUnique({ where: { id }, include: { user: true } });
     if (!item) throw new NotFoundException('Payout not found.');
     return { source: source.toUpperCase(), ...item };
+  }
+
+  async refunds(paging: { page: number; limit: number }, status?: string) {
+    if (status && !Object.values(RefundStatus).includes(status as RefundStatus)) {
+      throw new BadRequestException('Invalid refund status.');
+    }
+    const where: Prisma.RefundWhereInput = status ? { status: status as RefundStatus } : {};
+    const [items, total] = await Promise.all([
+      this.prisma.refund.findMany({
+        where,
+        include: {
+          order: { select: { id: true, orderNumber: true } },
+          user: { select: { id: true, email: true, firstName: true, lastName: true } },
+          payment: { select: { id: true, transactionRef: true, paymentMethod: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (paging.page - 1) * paging.limit,
+        take: paging.limit,
+      }),
+      this.prisma.refund.count({ where }),
+    ]);
+    return this.result(items, total, paging.page, paging.limit);
+  }
+
+  async refund(id: number) {
+    const refund = await this.prisma.refund.findUnique({
+      where: { id },
+      include: { order: true, user: true, payment: true },
+    });
+    if (!refund) throw new NotFoundException('Refund not found.');
+    return refund;
+  }
+
+  retryRefund(id: number) {
+    if (!this.payments) throw new BadRequestException('Refund processor is unavailable.');
+    return this.payments.retryRefund(id);
+  }
+
+  resolveRefundAttention(id: number, input: { accountNumber: string; bankId: string }) {
+    if (!this.payments) throw new BadRequestException('Refund processor is unavailable.');
+    return this.payments.resolveRefundAttention(id, input);
+  }
+
+  completeManualRefund(id: number, providerReference: string, actorId: number) {
+    if (!this.payments) throw new BadRequestException('Refund processor is unavailable.');
+    return this.payments.completeManualRefund(id, providerReference, actorId);
   }
 
   async stores(paging: { page: number; limit: number }, active?: string) {
@@ -527,6 +614,10 @@ export class AdminService {
       }
 
       if (approvePendingManualChecks) {
+        const manualLicences = initial.licences.filter(
+          (licence) =>
+            licence.status === 'PENDING' && !licence.provider && Boolean(licence.documentUrl),
+        );
         const vehicles = initial.vehicles.filter(
           (vehicle) => vehicle.status === 'PENDING' && Boolean(vehicle.photoUrl),
         );
@@ -535,6 +626,12 @@ export class AdminService {
             (document) => document.type === 'VEHICLE_REGISTRATION' && document.status === 'PENDING',
           ),
         );
+        if (manualLicences.length) {
+          await tx.riderLicence.updateMany({
+            where: { id: { in: manualLicences.map((licence) => licence.id) } },
+            data: { status: 'APPROVED' },
+          });
+        }
         if (vehicles.length) {
           await tx.vehicle.updateMany({
             where: { id: { in: vehicles.map((vehicle) => vehicle.id) } },
@@ -556,6 +653,18 @@ export class AdminService {
               entity: 'Vehicle',
               entityId: String(vehicle.id),
               changes: { status: 'APPROVED', reason, reviewScope: 'MOTORCYCLE_PHOTO_AND_PLATE' },
+            },
+          });
+        }
+        for (const licence of manualLicences) {
+          await tx.auditLog.create({
+            data: {
+              staffActorId: reviewerId,
+              action: 'KYC_APPROVED',
+              permission: 'kyc.review',
+              entity: 'RiderLicence',
+              entityId: String(licence.id),
+              changes: { status: 'APPROVED', reason, reviewScope: 'DRIVER_LICENCE_IMAGE' },
             },
           });
         }
@@ -665,6 +774,11 @@ export class AdminService {
   ) {
     const licence = await this.prisma.riderLicence.findUnique({ where: { id: licenceId } });
     if (!licence) throw new NotFoundException('Rider licence not found.');
+    if (status === 'APPROVED' && !licence.provider && !licence.documentUrl) {
+      throw new BadRequestException(
+        'A manual driver licence cannot be approved without an uploaded image.',
+      );
+    }
     if (status === 'APPROVED' && licence.provider && licence.providerStatus !== 'VERIFIED') {
       throw new BadRequestException(
         'An automatic provider failure or pending result cannot be manually approved.',
@@ -712,24 +826,6 @@ export class AdminService {
       data: { status },
     });
     await this.recordKycReview(reviewerId, 'Vehicle', vehicleId, status, reason);
-    return updated;
-  }
-
-  async reviewLiveness(
-    livenessId: number,
-    reviewerId: number,
-    status: 'APPROVED' | 'REJECTED',
-    reason?: string,
-  ) {
-    const record = await this.prisma.riderLivenessVerification.findUnique({
-      where: { id: livenessId },
-    });
-    if (!record) throw new NotFoundException('Rider liveness record not found.');
-    const updated = await this.prisma.riderLivenessVerification.update({
-      where: { id: livenessId },
-      data: { status, verifiedAt: status === 'APPROVED' ? new Date() : null },
-    });
-    await this.recordKycReview(reviewerId, 'RiderLivenessVerification', livenessId, status, reason);
     return updated;
   }
 

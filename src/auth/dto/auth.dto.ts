@@ -64,6 +64,29 @@ export class LoginDto {
   @IsString()
   @MinLength(8)
   password!: string;
+
+  @ApiPropertyOptional({
+    example: 'MOBILE',
+    enum: ['WEB', 'MOBILE'],
+    description: 'MOBILE returns tokens in the response for secure native-app storage.',
+  })
+  @IsOptional()
+  @IsIn(['WEB', 'MOBILE'])
+  clientType?: 'WEB' | 'MOBILE';
+}
+
+export class RefreshTokenDto {
+  @ApiPropertyOptional({
+    description: 'Required for native clients; browser clients use the HttpOnly refresh cookie.',
+  })
+  @IsOptional()
+  @IsString()
+  refreshToken?: string;
+
+  @ApiPropertyOptional({ example: 'MOBILE', enum: ['WEB', 'MOBILE'] })
+  @IsOptional()
+  @IsIn(['WEB', 'MOBILE'])
+  clientType?: 'WEB' | 'MOBILE';
 }
 
 export class VerifyEmailOtpDto {

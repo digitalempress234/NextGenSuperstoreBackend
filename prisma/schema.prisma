@@ -48,11 +48,21 @@ enum PaymentMethod {
   EASYBUY
   MAKOPA
   WALLET_BNPL
+  KLUMP_BNPL
 }
 
 enum PaymentProvider {
   PAYSTACK
   MANUAL
+  KLUMP
+}
+
+enum KlumpTransactionStatus {
+  PENDING
+  INITIATED
+  ABANDONED
+  SUCCESSFUL
+  FAILED
 }
 
 enum DiscountType {
@@ -91,6 +101,7 @@ enum DeliveryStatus {
   PICKED_UP
   IN_TRANSIT
   OUT_FOR_DELIVERY
+  ARRIVED_AT_CUSTOMER
   DELIVERED
   FAILED
   CANCELLED
@@ -168,6 +179,10 @@ enum NotificationType {
   DELIVERY_CODE
   KYC_UPDATE
   SYSTEM_ANNOUNCEMENT
+  CHAT_MESSAGE
+  DELIVERY_AVAILABLE
+  SUPPORT_REPLY
+  REWARD_UPDATE
 }
 
 enum NotificationPriority {
@@ -175,6 +190,21 @@ enum NotificationPriority {
   MEDIUM
   HIGH
   URGENT
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  NEEDS_ATTENTION
+  MANUAL_REVIEW
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+  WEB
 }
 
 enum VehicleOwnership {
@@ -328,6 +358,10 @@ model User {
   orderStatusChanges      OrderStatusHistory[]        @relation("OrderStatusActor")
   otpChallenges           OtpChallenge[]
   oauthAccounts           OAuthAccount[]
+  passkeyCredentials      PasskeyCredential[]
+  deviceRegistrations     DeviceRegistration[]
+  refunds                 Refund[]
+  klumpTransactions       KlumpTransaction[]
   rewardAccount           RewardAccount?
   cashbackRewards         CashbackReward[]
   rewardRedemptions       RewardRedemption[]
@@ -445,6 +479,7 @@ model AdminSession {
   id                Int       @id @default(autoincrement())
   userId            Int
   sessionTokenHash  String    @unique
+  refreshRotatedAt  DateTime?
   ipAddress         String?
   userAgent         String?
   deviceFingerprint String?
@@ -455,6 +490,38 @@ model AdminSession {
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt, expiresAt])
+}
+
+model PasskeyCredential {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      BigInt    @default(0)
+  transports   Json?
+  deviceType   String?
+  backedUp     Boolean   @default(false)
+  label        String?
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model DeviceRegistration {
+  id         Int            @id @default(autoincrement())
+  userId     Int
+  token      String         @unique @db.VarChar(512)
+  platform   DevicePlatform
+  deviceId   String?
+  enabled    Boolean        @default(true)
+  lastSeenAt DateTime       @default(now())
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled])
 }
 
 // ─── Staff / Back-office users ────────────────────────────────────────────────
@@ -704,6 +771,7 @@ model Store {
 
   @@index([ownerUserId])
   @@index([city, state, isActive])
+  @@index([latitude, longitude])
 }
 
 model StoreImage {
@@ -910,6 +978,7 @@ model CheckoutPaymentGroup {
   user             User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
   payment          Payment?                    @relation(fields: [paymentId], references: [id])
   allocations      CheckoutPaymentAllocation[]
+  klumpTransaction KlumpTransaction?
 
   @@index([userId, createdAt])
 }
@@ -963,6 +1032,7 @@ model Order {
   qrCredentials      OrderQrCredential[]
   scans              OrderScan[]
   confirmationOutbox OrderConfirmationOutbox?
+  refund             Refund?
 
   @@index([userId, createdAt])
   @@index([storeId, currentStatus, createdAt])
@@ -1003,24 +1073,48 @@ model OrderStatusHistory {
 }
 
 model Payment {
-  id             Int                    @id @default(autoincrement())
-  amount         Decimal                @db.Decimal(12, 2)
-  currency       String                 @default("NGN")
-  status         PaymentStatus          @default(PENDING)
-  paymentMethod  PaymentMethod
-  provider       PaymentProvider
-  transactionRef String?                @unique
-  providerRef    String?
-  paymentUrl     String?
-  metadata       Json?
-  paidAt         DateTime?
-  failureReason  String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  order          Order?                 @relation("OrderPayment", fields: [orderId], references: [id])
-  orderId        Int?                   @unique
-  groups         CheckoutPaymentGroup[]
-  webhookEvents  PaymentWebhookEvent[]
+  id               Int                    @id @default(autoincrement())
+  amount           Decimal                @db.Decimal(12, 2)
+  currency         String                 @default("NGN")
+  status           PaymentStatus          @default(PENDING)
+  paymentMethod    PaymentMethod
+  provider         PaymentProvider
+  transactionRef   String?                @unique
+  providerRef      String?
+  paymentUrl       String?
+  metadata         Json?
+  paidAt           DateTime?
+  failureReason    String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  order            Order?                 @relation("OrderPayment", fields: [orderId], references: [id])
+  orderId          Int?                   @unique
+  groups           CheckoutPaymentGroup[]
+  webhookEvents    PaymentWebhookEvent[]
+  refunds          Refund[]
+  klumpTransaction KlumpTransaction?
+}
+
+model KlumpTransaction {
+  id                Int                    @id @default(autoincrement())
+  userId            Int
+  paymentGroupId    Int                    @unique
+  paymentId         Int                    @unique
+  merchantReference String                 @unique
+  providerReference String?                @unique
+  status            KlumpTransactionStatus @default(PENDING)
+  isLive            Boolean
+  checkoutPayload   Json
+  providerPayload   Json?
+  verifiedAt        DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentGroup      CheckoutPaymentGroup   @relation(fields: [paymentGroupId], references: [id], onDelete: Cascade)
+  payment           Payment                @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, updatedAt])
 }
 
 model PaymentWebhookEvent {
@@ -1037,6 +1131,32 @@ model PaymentWebhookEvent {
   paymentId    Int?
 
   @@index([provider, eventType, createdAt])
+}
+
+model Refund {
+  id               Int             @id @default(autoincrement())
+  orderId          Int             @unique
+  userId           Int
+  paymentId        Int
+  amount           Decimal         @db.Decimal(12, 2)
+  currency         String          @default("NGN")
+  provider         PaymentProvider
+  status           RefundStatus    @default(PENDING)
+  idempotencyKey   String          @unique
+  providerRefundId String?         @unique
+  reason           String
+  failureReason    String?
+  providerPayload  Json?
+  processingAt     DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  order            Order           @relation(fields: [orderId], references: [id])
+  user             User            @relation(fields: [userId], references: [id])
+  payment          Payment         @relation(fields: [paymentId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
 }
 
 model Pickup {
@@ -1074,6 +1194,7 @@ model Delivery {
   status                DeliveryStatus         @default(PENDING)
   assignedAt            DateTime?
   pickedUpAt            DateTime?
+  arrivedAt             DateTime?
   deliveredAt           DateTime?
   deliveryCodeExpiresAt DateTime?
   deliveryCodeAttempts  Int                    @default(0)
@@ -1085,6 +1206,7 @@ model Delivery {
   statusUpdates         DeliveryStatusUpdate[]
   locations             DeliveryLocation[]
   riderEarning          RiderEarning?
+  supportTickets        SupportTicket[]
 
   @@index([riderId, status])
 }
@@ -1151,6 +1273,10 @@ model RiderProfile {
   rejectedEvidence       Json?
   submissionAttempt      Int                          @default(0)
   isOnline               Boolean                      @default(false)
+  currentLatitude        Decimal?                     @db.Decimal(10, 7)
+  currentLongitude       Decimal?                     @db.Decimal(10, 7)
+  locationAccuracyM      Decimal?                     @db.Decimal(8, 2)
+  locationUpdatedAt      DateTime?
   createdAt              DateTime                     @default(now())
   updatedAt              DateTime                     @updatedAt
   user                   User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1164,6 +1290,7 @@ model RiderProfile {
   earnings               RiderEarning[]
 
   @@index([onboardingStatus, isOnline])
+  @@index([locationUpdatedAt])
 }
 
 model RiderDocument {
@@ -1181,7 +1308,7 @@ model RiderDocument {
   reviewedAt      DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
-  // ── QoreID automated verification fields (added; original fields above unchanged) ──
+
   qoreidReference String? // QoreID transaction reference returned after verification
   qoreidStatus    String? // "VERIFIED" | "UNVERIFIED" | "PARTIAL" | null
   qoreidRaw       Json? // Full QoreID response snapshot stored for audit trail
@@ -1527,6 +1654,7 @@ model NotificationPreference {
   type      NotificationType
   inApp     Boolean          @default(true)
   email     Boolean          @default(true)
+  push      Boolean          @default(true)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1884,6 +2012,7 @@ model SupportTicket {
   ticketNumber String         @unique
   userId       Int
   orderId      Int?
+  deliveryId   Int?
   category     String
   subject      String
   description  String         @db.Text
@@ -1893,9 +2022,11 @@ model SupportTicket {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delivery     Delivery?      @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
   replies      SupportReply[]
 
   @@index([userId, status, createdAt])
+  @@index([deliveryId, status, createdAt])
 }
 
 model SupportReply {

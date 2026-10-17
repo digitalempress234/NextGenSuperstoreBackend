@@ -30,7 +30,9 @@ export async function completeOrder(
 
   const rateRow = await tx.platformConfig.findUnique({ where: { key: 'cashback_rate' } });
   const percentage = new Prisma.Decimal(rateRow?.value ?? '1');
+  let cashbackAmount = new Prisma.Decimal(0);
   if (percentage.gt(0) && percentage.lte(100)) {
+    cashbackAmount = order.subtotal.mul(percentage).div(100).toDecimalPlaces(2);
     await tx.cashbackReward.upsert({
       where: { orderId: order.id },
       update: {},
@@ -38,7 +40,7 @@ export async function completeOrder(
         userId: order.userId,
         orderId: order.id,
         percentage,
-        amount: order.subtotal.mul(percentage).div(100).toDecimalPlaces(2),
+        amount: cashbackAmount,
       },
     });
   }
@@ -64,4 +66,6 @@ export async function completeOrder(
       },
     });
   }
+
+  return { cashbackAmount: cashbackAmount.toFixed(2), points };
 }

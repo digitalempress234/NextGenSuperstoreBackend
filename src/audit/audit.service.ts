@@ -37,8 +37,9 @@ export class AuditService {
   }
 
   list(limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     return this.prisma.auditLog.findMany({
-      take: Math.min(limit, 500),
+      take: limit,
       include: {
         actor: {
           select: {

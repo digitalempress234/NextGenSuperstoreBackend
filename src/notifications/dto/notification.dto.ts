@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { NotificationType } from '@prisma/client';
+import { DevicePlatform, NotificationType } from '@prisma/client';
 
 export class NotificationListQueryDto {
   @ApiPropertyOptional({ example: 1, minimum: 1 })
@@ -9,11 +9,11 @@ export class NotificationListQueryDto {
   @Min(1)
   page?: number = 1;
 
-  @ApiPropertyOptional({ example: 10, minimum: 1, maximum: 100 })
+  @ApiPropertyOptional({ example: 15, default: 15, minimum: 1, maximum: 15 })
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(15)
   limit?: number = 15;
 
   @ApiPropertyOptional({ example: false })
@@ -36,6 +36,26 @@ export class UpdateNotificationPreferenceDto {
   @IsOptional()
   @IsBoolean()
   email?: boolean;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  @IsBoolean()
+  push?: boolean;
+}
+
+export class RegisterNotificationDeviceDto {
+  @ApiProperty({ description: 'FCM registration token for this app installation.' })
+  @IsString()
+  token!: string;
+
+  @ApiProperty({ enum: DevicePlatform, example: DevicePlatform.ANDROID })
+  @IsEnum(DevicePlatform)
+  platform!: DevicePlatform;
+
+  @ApiPropertyOptional({ example: 'pixel-8-installation-id' })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }
 
 export class AnnouncementDto {

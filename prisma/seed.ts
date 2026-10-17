@@ -138,6 +138,8 @@ const rolePermissions: Record<RoleName, string[]> = {
     'deliveries.view',
     'deliveries.status.update',
     'deliveries.scan',
+    'support.tickets.create',
+    'support.tickets.view.own',
   ],
   SUPER_ADMIN: permissionDefinitions.map((p) => p[0]),
   OPERATIONS_ADMIN: [

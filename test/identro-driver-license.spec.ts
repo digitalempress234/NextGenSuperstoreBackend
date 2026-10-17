@@ -68,4 +68,86 @@ describe('Identro driver licence integration', () => {
       'https://identro.example/merchant-api/driver-license/requests/DL-002',
     );
   });
+
+  it('uses the secure three-stage liveness flow and trusts the provider decision', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            sessionId: 'LIVE-001',
+            sdkToken: 'short-lived-token',
+            expiresAt: '2026-10-03T12:30:00.000Z',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, data: { accessKeyId: 'temporary' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            reference: 'LIVE-001',
+            status: 'COMPLETED',
+            liveness: { passed: true, score: 91.24, threshold: 80, decision: 'PASSED' },
+          },
+        }),
+      });
+
+    const session = await service.mintSdkSessionToken({
+      serviceType: 'FACE_LIVENESS_ONLY',
+      consentCaptured: true,
+      consentReference: 'CONSENT-001',
+    });
+    await service.getLivenessCredentials(session.sessionId);
+    const completionPayload = {
+      submittedFaceBase64: 'data:image/jpeg;base64,captured-face',
+      mobilePassiveFallback: true,
+      metadata: { captureMode: 'passive' },
+    };
+    const result = await service.completeLivenessSession(session.sessionId, completionPayload);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      'https://identro.example/merchant-api/face/liveness/sessions',
+      'https://identro.example/merchant-api/face/liveness/sessions/LIVE-001/credentials',
+      'https://identro.example/merchant-api/face/liveness/sessions/LIVE-001/complete',
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      serviceType: 'FACE_LIVENESS_ONLY',
+      sourceType: 'UPLOADED_REFERENCE',
+      consentCaptured: true,
+      consentReference: 'CONSENT-001',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body as string)).toEqual(completionPayload);
+    expect(result).toMatchObject({
+      reference: 'LIVE-001',
+      providerStatus: 'COMPLETED',
+      passed: true,
+      score: 91.24,
+      threshold: 80,
+      decision: 'PASSED',
+    });
+  });
+
+  it('accepts reference-only session responses used by the three-stage SDK flow', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { reference: 'LIVE-REFERENCE-ONLY' },
+      }),
+    });
+
+    await expect(
+      service.mintSdkSessionToken({
+        serviceType: 'FACE_LIVENESS_ONLY',
+        consentCaptured: true,
+        consentReference: 'CONSENT-002',
+      }),
+    ).resolves.toEqual({ sessionId: 'LIVE-REFERENCE-ONLY' });
+  });
 });

@@ -59,7 +59,17 @@ export class OrdersController {
 
   @Post(':id/cancel')
   @RequirePermissions('orders.cancel')
-  @ApiOperation({ summary: 'Customer: cancel an eligible order before dispatch' })
+  @ApiOperation({
+    summary: 'Customer: cancel an eligible order and initiate its refund',
+    description:
+      'Wallet refunds complete immediately. Paystack card or bank-transfer refunds are created for this order allocation and continue asynchronously.',
+  })
+  @OkExample({
+    orderId: 501,
+    status: 'cancelled',
+    refundId: 91,
+    refundStatus: 'processing',
+  })
   cancel(
     @CurrentUser('id') userId: number,
     @Param('id', ParseIntPipe) id: number,

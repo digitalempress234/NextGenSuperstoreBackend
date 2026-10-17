@@ -4,6 +4,7 @@ import { AllExceptionsFilter } from './logging/all-exceptions.filter';
 import { AppLoggerService } from './logging/app-logger.service';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { setupScalarDocs } from './docs/setup-docs';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
@@ -12,15 +13,24 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { RequestIdInterceptor } from './common/interceptors/request-id.interceptor';
 
-
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
     rawBody: true,
   });
 
+  // Identro's passive liveness completion includes a base64-encoded selfie,
+  // which is larger than Express's default 100 KB JSON body limit.
+  app.useBodyParser('json', {
+    limit: process.env.HTTP_JSON_BODY_LIMIT ?? '8mb',
+  });
+
   const logger = app.get(AppLoggerService);
   app.useLogger(logger);
+  // Nginx and the API gateway proxy production traffic to this process. Trust
+  // only the nearest proxy so Express resolves req.ip from X-Forwarded-For
+  // instead of grouping every public request under the loopback address.
+  app.set('trust proxy', 1);
   app.useGlobalInterceptors(app.get(RequestContextInterceptor));
   const requestContext = app.get(RequestContextService);
 
@@ -63,7 +73,7 @@ async function bootstrap(): Promise<void> {
     origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Accept', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Accept', 'Authorization', 'X-Request-Id'],
   });
 
   app.useGlobalFilters(new AllExceptionsFilter(logger, requestContext));
@@ -80,8 +90,6 @@ async function bootstrap(): Promise<void> {
   );
 
   setupScalarDocs(app);
-
-  
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '::');

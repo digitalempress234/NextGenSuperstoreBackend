@@ -8,6 +8,7 @@ import {
   IsIn,
   IsArray,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Min,
@@ -222,13 +223,18 @@ export class ReplaceVehicleDocumentDto {
 }
 
 export class CreateRiderLicenceDto {
-  @ApiProperty({ example: 'DRIVERS_LICENSE' })
-  @IsString()
-  type!: string;
+  @ApiProperty({ enum: ['DRIVERS_LICENSE'], example: 'DRIVERS_LICENSE' })
+  @IsIn(['DRIVERS_LICENSE'])
+  type!: 'DRIVERS_LICENSE';
 
-  @ApiProperty({ example: 'LAG-DRV-123456' })
+  @ApiPropertyOptional({
+    example: 'LAG-DRV-123456',
+    description:
+      'Optional licence number when the rider can identify it. Administrators review the uploaded image even when this is omitted.',
+  })
+  @IsOptional()
   @IsString()
-  number!: string;
+  number?: string;
 
   @ApiPropertyOptional({ example: '2024-01-15' })
   @IsOptional()
@@ -240,7 +246,11 @@ export class CreateRiderLicenceDto {
   @IsDateString()
   expiryDate?: string;
 
-  @ApiProperty({ example: 'https://res.cloudinary.com/demo/image/upload/licence.jpg' })
+  @ApiProperty({
+    example: 'https://res.cloudinary.com/demo/image/upload/licence.jpg',
+    description:
+      'Required URL of a clear, readable image showing the complete driver licence. This image is the primary evidence reviewed by an administrator.',
+  })
   @IsString()
   documentUrl!: string;
 }
@@ -335,6 +345,15 @@ export class CreateBankAccountDto {
   isPrimary?: boolean;
 }
 
+export class SetPrimaryBankAccountDto {
+  @ApiProperty({
+    example: true,
+    description: 'Must be true. This endpoint promotes the selected verified account.',
+  })
+  @Equals(true)
+  isPrimary!: true;
+}
+
 export class CreateGuarantorDto {
   @ApiProperty({ example: 'John Guarantor' })
   @IsString()
@@ -360,13 +379,20 @@ export class CreateGuarantorDto {
 }
 
 export class MintKycSessionDto {
-  @ApiPropertyOptional({
-    example: 'RIDER-CONSENT-001',
-    description: 'Optional consent reference for audit trail.',
+  @ApiProperty({
+    example: true,
+    description: 'Must be true. The rider must explicitly consent before liveness capture.',
   })
-  @IsOptional()
+  @IsBoolean()
+  @Equals(true)
+  consentCaptured!: true;
+
+  @ApiProperty({
+    example: 'RIDER-CONSENT-001',
+    description: 'Required reference tying the session to the captured rider consent.',
+  })
   @IsString()
-  consentReference?: string;
+  consentReference!: string;
 
   @ApiPropertyOptional({
     example: 'LIVE-RIDER-1001',
@@ -375,6 +401,44 @@ export class MintKycSessionDto {
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
+}
+
+export class CompleteLivenessSessionDto {
+  @ApiPropertyOptional({
+    example: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ...',
+    description:
+      'Passive-capture selfie returned by the Identro Flutter SDK. Forward payload.toJson() without renaming this field.',
+  })
+  @IsOptional()
+  @IsString()
+  submittedFaceBase64?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    default: false,
+    description: 'Indicates that the mobile SDK used its passive camera fallback.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  mobilePassiveFallback?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Requests a refreshed provider result when supported by Identro.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  forceRefresh?: boolean;
+
+  @ApiPropertyOptional({
+    example: { captureMode: 'passive', platform: 'android' },
+    description: 'Provider SDK completion metadata. Do not include permanent credentials.',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
 
 export class VerifyRiderDocumentDto {

@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post } from '@nes
 import { PaymentsService } from '../payments/payments.service';
 import { CheckoutSettingsService } from './checkout-settings.service';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
 
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
@@ -17,6 +18,7 @@ export class CheckoutController {
     private readonly checkoutService: CheckoutService,
     private readonly payments: PaymentsService,
     private readonly settings: CheckoutSettingsService,
+    private readonly config: ConfigService,
   ) {}
 
   @Get('options')
@@ -24,14 +26,17 @@ export class CheckoutController {
   @OkExample({
     deliveryFeePerStore: 1500,
     deliveryEnabled: true,
-    paymentMethods: ['card', 'bank_transfer', 'wallet'],
+    paymentMethods: ['card', 'bank_transfer', 'wallet', 'klump_bnpl'],
     currency: 'NGN',
   })
   async options() {
     const settings = await this.settings.settings();
+    const klumpEnabled = Boolean(
+      this.config.get<string>('KLUMP_PUBLIC_KEY') && this.config.get<string>('KLUMP_SECRET_KEY'),
+    );
     return {
       ...settings,
-      paymentMethods: ['card', 'bank_transfer', 'wallet'],
+      paymentMethods: ['card', 'bank_transfer', 'wallet', ...(klumpEnabled ? ['klump_bnpl'] : [])],
       currency: 'NGN',
     };
   }

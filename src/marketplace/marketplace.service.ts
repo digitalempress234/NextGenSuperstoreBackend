@@ -191,7 +191,7 @@ export class MarketplaceService {
 
   async browse(query: BrowseMarketplaceDto) {
     const page = Math.max(1, Number(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(query.limit) || 15));
+    const limit = Math.min(15, Math.max(1, Number(query.limit) || 15));
     const skip = (page - 1) * limit;
 
     const priceFilter =
@@ -347,7 +347,7 @@ export class MarketplaceService {
 
   async stores(query: SearchStoresDto) {
     const page = Math.max(1, Number(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(query.limit) || 15));
+    const limit = Math.min(15, Math.max(1, Number(query.limit) || 15));
     const skip = (page - 1) * limit;
 
     const where = {

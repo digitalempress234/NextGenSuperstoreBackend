@@ -17,12 +17,30 @@ export interface IdentroLivenessSessionRequest {
   subjectRef?: string;
   ttlSeconds?: number;
   idempotencyKey?: string;
+  consentCaptured?: boolean;
 }
 
 export interface IdentroLivenessSessionResponse {
   sessionId: string;
-  sdkToken: string;
-  expiresAt: string;
+  sdkToken?: string;
+  expiresAt?: string;
+}
+
+export interface IdentroLivenessCompletionRequest {
+  submittedFaceBase64?: string;
+  mobilePassiveFallback?: boolean;
+  forceRefresh?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface IdentroLivenessResult {
+  reference: string;
+  providerStatus: string | null;
+  passed: boolean | null;
+  score: number | null;
+  threshold: number | null;
+  decision: string | null;
+  raw: Record<string, unknown>;
 }
 
 export interface IdentroNinRequest {

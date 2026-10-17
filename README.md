@@ -2,7 +2,7 @@
 
 Production-oriented NestJS backend for a multi-role marketplace serving customers, vendors, store agents, motorcycle riders, and back-office staff.
 
-The API covers authentication, marketplace discovery, multi-store checkout, Paystack payments, wallets, order fulfilment, rider delivery tracking, QR verification, rewards, support, chat, KYC, notifications, and audited administration.
+The API covers authentication, marketplace discovery, multi-store checkout, Paystack payments, Klump provider-backed BNPL, wallets, order fulfilment, rider delivery tracking, QR verification, rewards, support, chat, KYC, notifications, and audited administration.
 
 ## Architecture
 
@@ -14,7 +14,7 @@ flowchart LR
     Edge[Nginx and public gateway]
     API[NestJS REST and Socket.IO application]
     Data[(MySQL and Redis)]
-    Providers[Paystack, Identro, QoreID, Google, Cloudinary, SMTP]
+    Providers[Paystack, Klump, Identro, QoreID, Google, Cloudinary, SMTP]
 
     Clients -->|HTTPS and HttpOnly cookies| Edge
     Edge --> API
@@ -30,6 +30,7 @@ flowchart LR
 - Redis through ioredis
 - Socket.IO for chat and live delivery tracking
 - Paystack for card payments, bank transfers, bank lookup, and account resolution
+- Klump for provider-managed buy-now-pay-later checkout and repayment
 - Identro and QoreID for identity, CAC, liveness, and driver-licence workflows
 - Cloudinary for media uploads
 - Nodemailer and SMTP for transactional email
@@ -67,12 +68,14 @@ Interactive API references:
 
 ## Authentication and authorization
 
-The application uses secure HttpOnly cookies:
+Browser clients use secure HttpOnly cookies:
 
 - `purse_access_token` for customers, vendors, store agents, and riders.
 - `purse_staff_token` for superadmins and back-office staff.
 
-Clients must enable credential handling with `credentials: "include"` or Axios `withCredentials: true`. Access and refresh tokens are not returned for storage in browser JavaScript.
+Browser clients must enable credential handling with `credentials: "include"` or Axios `withCredentials: true`. Native clients send `clientType: "MOBILE"` during login and store the returned rotating refresh token in Android Keystore or iOS Keychain. Native API requests use `Authorization: Bearer <access-token>`. The default access lifetime is 15 minutes and refresh lifetime is 30 days.
+
+Registered users can add WebAuthn passkeys. Biometric verification stays on the device; the backend stores only the public-key credential. Configure `WEBAUTHN_RP_ID` and `WEBAUTHN_ORIGINS` before enabling passkey registration.
 
 Authorization is enforced by:
 
@@ -88,8 +91,9 @@ Authorization is enforced by:
 
 - Registration, email verification, login, Google authentication, and password recovery.
 - Marketplace, catalog, product search, barcode lookup, and offer comparison.
-- Cart, checkout, pickup or delivery, Paystack payment, and wallet funding.
+- Cart, checkout, pickup or delivery, Paystack payment, Klump BNPL, wallet funding, and asynchronous refunds.
 - Orders, tracking, returns, QR delivery verification, rewards, referrals, reviews, support, and store chat.
+- Foreground notifications use Socket.IO namespace `/notifications` and event `notification.created`; background delivery uses registered FCM device tokens.
 
 ### Vendor and store agent
 
@@ -101,8 +105,9 @@ Authorization is enforced by:
 
 - Progressive rider onboarding and KYC.
 - Automatic identity, liveness, and Nigerian driver-licence verification.
-- Motorcycle, registration, payout account, and conditional evidence management.
+- Motorcycle, registration, multiple payout accounts, primary-account selection, and conditional evidence management.
 - Delivery offers, pickup scans, live location tracking, delivery verification, earnings, withdrawals, inbox, and settings.
+- Assigned-delivery support tickets for unreachable customers, incorrect addresses, disputes, and safety concerns.
 
 ### Superadmin and staff
 
@@ -118,7 +123,7 @@ src/
 ├── approvals/      Sensitive-action approval workflows
 ├── audit/          Audited activity records
 ├── auth/           Customer and role authentication
-├── bnpl/           BNPL integration boundary; rollout currently paused
+├── bnpl/           Klump BNPL checkout, verification, webhooks, and legacy records
 ├── cart/           Cart and coupon management
 ├── catalog/        Categories, products, offers, and barcode lookup
 ├── chats/          REST and Socket.IO customer/store chat
@@ -160,11 +165,11 @@ DTO classes are kept inside each module's `dto/` directory. Controllers handle t
 
 ```text
 catalog → cart → checkout validation → per-store orders
-        → wallet or Paystack payment → verified payment
+        → wallet, Paystack, or Klump BNPL → verified payment
         → order confirmation notification → fulfilment
 ```
 
-Wallet credits and payment confirmations are server-owned. Paystack webhooks are signature-verified and processed idempotently.
+Wallet credits and payment confirmations are server-owned. Paystack and Klump webhooks are signature-verified and processed idempotently. Klump eligibility, instalments, and automatic repayments remain provider-owned; Purse confirms orders only after server-side transaction verification.
 
 ### Order fulfilment
 
@@ -173,6 +178,10 @@ ORDER_RECEIVED → CONFIRMED → PREPARING → READY_FOR_PICKUP
                → PICKED_UP → IN_TRANSIT / OUT_FOR_DELIVERY
                → DELIVERED → COMPLETED
 ```
+
+The rider-facing `delivery.status` additionally persists `ARRIVED_AT_CUSTOMER` between
+`OUT_FOR_DELIVERY` and QR-confirmed `DELIVERED`, allowing the mobile app to restore its handoff
+screen after a restart while the customer-facing order remains out for delivery.
 
 Status ownership is enforced by role: the system confirms payment, store staff prepare orders, assigned riders progress delivery, and exceptional staff actions are audited.
 
@@ -243,12 +252,20 @@ Copy `.env.example` and configure the relevant values. Major groups include:
 - Persistence: `DATABASE_URL` and `REDIS_URL`.
 - Authentication: JWT secrets, cookie policy, OTP policy, and Google client ID.
 - Payments: Paystack secret/public keys, callback URL, and settlement rates.
+- BNPL: Klump public/secret keys, `KLUMP_MODE`, optional redirect URL, and provider base URL.
 - Identity: Identro and QoreID credentials and approval policies.
 - Media: Cloudinary credentials.
 - Email: SMTP credentials and sender address.
 - Operations: logging, migration-on-start, and delivery tracking limits.
+- Passkeys and push: WebAuthn relying-party settings and Firebase service-account JSON.
 
 Never commit real credentials or production secrets.
+
+For Android Google Sign-In, `GOOGLE_CLIENT_ID` must be the OAuth Web application client ID and
+the mobile app must use that same value as `serverClientId`. Register the Android application ID
+and its debug/release SHA fingerprints in Google Cloud or Firebase, then download the generated
+`google-services.json` into the Android app. The JSON file belongs to the mobile project and should
+not be added to this backend repository.
 
 ## Quality checks
 

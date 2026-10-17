@@ -18,6 +18,7 @@ const ACTIVE_STATUSES: DeliveryStatus[] = [
   DeliveryStatus.PICKED_UP,
   DeliveryStatus.IN_TRANSIT,
   DeliveryStatus.OUT_FOR_DELIVERY,
+  DeliveryStatus.ARRIVED_AT_CUSTOMER,
 ];
 
 @Injectable()

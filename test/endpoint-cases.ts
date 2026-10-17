@@ -520,6 +520,26 @@ export const endpointCases: EndpointCase[] = [
   },
   {
     module: 'riders',
+    method: 'delete',
+    path: '/riders/bank-accounts/1',
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'riders',
+    method: 'patch',
+    path: '/riders/bank-accounts/1/primary',
+    body: { isPrimary: true },
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'support',
+    method: 'post',
+    path: '/riders/support/tickets',
+    body: {},
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'riders',
     method: 'post',
     path: '/riders/guarantors',
     body: {},

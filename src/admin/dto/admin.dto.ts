@@ -1,5 +1,24 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+
+export class ResolveRefundAttentionDto {
+  @ApiProperty({ example: '0123456789', description: 'Customer-approved refund account.' })
+  @IsString()
+  @Matches(/^\d{10}$/)
+  accountNumber!: string;
+
+  @ApiProperty({ example: '9', description: 'Paystack bank ID returned by the bank directory.' })
+  @IsString()
+  bankId!: string;
+}
 
 const ADMIN_ORDER_STATUSES = [
   'PREPARING',
@@ -60,7 +79,7 @@ export class RiderApplicationDecisionDto {
   @ApiPropertyOptional({
     default: false,
     description:
-      'When approving, atomically approves the pending motorcycle photo/plate and registration evidence reviewed on this screen. Automatic identity, licence, and liveness failures are never overridden.',
+      'When approving, atomically approves pending manual driver-licence images, motorcycle photo/plate, and registration evidence reviewed on this screen. Automatic identity and Identro liveness failures and failed provider-backed licence checks are never overridden.',
   })
   @IsOptional()
   @IsBoolean()

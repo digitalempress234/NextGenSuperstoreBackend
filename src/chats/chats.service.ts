@@ -1,9 +1,14 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 @Injectable()
 export class ChatsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
   async list(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const where = {
       OR: [
         { participantId: userId },
@@ -58,6 +63,7 @@ export class ChatsService {
     return conversation;
   }
   async messages(userId: number, id: number, cursor?: number, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     await this.assertMember(userId, id);
     const items = await this.prisma.chatMessage.findMany({
       where: { conversationId: id, id: cursor ? { lt: cursor } : undefined },
@@ -65,15 +71,15 @@ export class ChatsService {
         sender: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
       },
       orderBy: { id: 'desc' },
-      take: Math.min(limit, 100),
+      take: limit,
     });
     return {
       items: items.reverse(),
-      nextCursor: items.length === Math.min(limit, 100) ? items[0]?.id : null,
+      nextCursor: items.length === limit ? items[0]?.id : null,
     };
   }
   async send(userId: number, id: number, body: string) {
-    await this.assertMember(userId, id);
+    const conversation = await this.assertMember(userId, id);
     const message = await this.prisma.chatMessage.create({
       data: { conversationId: id, senderId: userId, body: body.trim() },
       include: {
@@ -84,6 +90,39 @@ export class ChatsService {
       where: { id },
       data: { lastMessageAt: message.createdAt },
     });
+
+    const recipients = new Set<number>([
+      conversation.participantId,
+      ...(conversation.adminId ? [conversation.adminId] : []),
+      ...(conversation.store
+        ? [
+            conversation.store.ownerUserId,
+            ...conversation.store.members.map((member) => member.userId),
+          ]
+        : []),
+    ]);
+    recipients.delete(userId);
+    const senderName =
+      [message.sender.firstName, message.sender.lastName].filter(Boolean).join(' ') || 'Someone';
+    const preview = message.body.length > 180 ? `${message.body.slice(0, 177)}...` : message.body;
+    await Promise.allSettled(
+      [...recipients].map((recipientId) =>
+        this.notifications?.notifyUser({
+          userId: recipientId,
+          type: 'CHAT_MESSAGE',
+          title: `New message from ${senderName}`,
+          message: preview,
+          data: {
+            conversationId: id,
+            messageId: message.id,
+            senderId: userId,
+            storeId: conversation.storeId,
+            orderId: conversation.orderId,
+          },
+          eventKey: `chat-message:${message.id}:${recipientId}`,
+        }),
+      ),
+    );
     return message;
   }
 }

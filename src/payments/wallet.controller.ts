@@ -190,7 +190,7 @@ export class WalletController {
     name: 'limit',
     required: false,
     example: 15,
-    description: 'Items per page (default: 15, max: 100)',
+    description: 'Items per page (default and maximum: 15)',
   })
   @OkExample({
     balance: '2500.00',
@@ -225,7 +225,7 @@ export class WalletController {
     @Query('limit') limit?: string,
   ) {
     const p = Math.max(1, parseInt(page ?? '1', 10) || 1);
-    const l = Math.min(100, Math.max(1, parseInt(limit ?? '15', 10) || 15));
+    const l = Math.min(15, Math.max(1, parseInt(limit ?? '15', 10) || 15));
     return this.payments.walletTransactions(userId, p, l);
   }
 
@@ -260,7 +260,7 @@ export class WalletController {
     @Query('limit') limit?: string,
   ) {
     const p = Math.max(1, parseInt(page ?? '1', 10) || 1);
-    const l = Math.min(100, Math.max(1, parseInt(limit ?? '15', 10) || 15));
+    const l = Math.min(15, Math.max(1, parseInt(limit ?? '15', 10) || 15));
     return this.payments.walletWithdrawals(userId, p, l);
   }
 }

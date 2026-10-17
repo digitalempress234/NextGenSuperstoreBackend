@@ -1,11 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateSupportTicketDto, UpdateSupportTicketDto } from './dto/support.dto';
+import {
+  CreateRiderSupportTicketDto,
+  CreateSupportTicketDto,
+  UpdateSupportTicketDto,
+} from './dto/support.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 @Injectable()
 export class SupportService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
   async create(userId: number, dto: CreateSupportTicketDto) {
     if (dto.orderId && !(await this.prisma.order.findFirst({ where: { id: dto.orderId, userId } })))
       throw new NotFoundException('Order not found.');
@@ -21,7 +29,44 @@ export class SupportService {
       },
     });
   }
+
+  async createRiderTicket(userId: number, dto: CreateRiderSupportTicketDto) {
+    const delivery = await this.prisma.delivery.findFirst({
+      where: { id: dto.deliveryId, riderId: userId },
+      select: { id: true, orderId: true },
+    });
+    if (!delivery) {
+      throw new NotFoundException('Delivery not found or is not assigned to this rider.');
+    }
+
+    const subject = dto.category
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+    const ticket = await this.prisma.supportTicket.create({
+      data: {
+        userId,
+        orderId: delivery.orderId,
+        deliveryId: delivery.id,
+        category: dto.category,
+        subject: `Rider delivery issue: ${subject}`,
+        description: dto.description,
+        attachments: dto.attachments as Prisma.InputJsonValue | undefined,
+        ticketNumber: `SUP-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`,
+      },
+    });
+
+    return {
+      ticketId: ticket.ticketNumber,
+      id: ticket.id,
+      deliveryId: ticket.deliveryId,
+      status: ticket.status,
+      createdAt: ticket.createdAt,
+    };
+  }
   async list(userId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     const where = { userId };
     const [items, total] = await Promise.all([
       this.prisma.supportTicket.findMany({
@@ -59,6 +104,7 @@ export class SupportService {
     });
   }
   async adminTickets(page = 1, limit = 15, status?: string) {
+    limit = Math.min(15, Math.max(1, limit));
     const where = { status: status || undefined };
     const [items, total] = await Promise.all([
       this.prisma.supportTicket.findMany({
@@ -84,6 +130,14 @@ export class SupportService {
     await this.prisma.supportTicket.update({
       where: { id },
       data: { status: 'IN_PROGRESS' },
+    });
+    await this.notifications?.notifyUser({
+      userId: ticket.userId,
+      type: 'SUPPORT_REPLY',
+      title: 'New support reply',
+      message: `Support replied to ticket ${ticket.ticketNumber}.`,
+      data: { ticketId: ticket.id, ticketNumber: ticket.ticketNumber, replyId: reply.id },
+      eventKey: `support-reply:${reply.id}`,
     });
     return reply;
   }

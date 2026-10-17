@@ -13,6 +13,7 @@ describe('DeliveryTrackingGateway', () => {
     expect(DELIVERY_SOCKET_PATH).toBe('/socket.io');
     expect(DELIVERY_SOCKET_NAMESPACE).toBe('/delivery');
     expect(DELIVERY_SOCKET_EVENTS.join).toBe('delivery:join');
+    expect(DELIVERY_SOCKET_EVENTS.jobClaimed).toBe('delivery.job.claimed');
   });
 
   it.each([
@@ -61,6 +62,26 @@ describe('DeliveryTrackingGateway', () => {
     expect(emit).toHaveBeenCalledWith(
       DELIVERY_SOCKET_EVENTS.locationUpdated,
       expect.objectContaining({ deliveryId: 12 }),
+    );
+  });
+
+  it('broadcasts claimed jobs to the rider job-board room', () => {
+    const emit = jest.fn();
+    const gateway = Object.create(DeliveryTrackingGateway.prototype) as DeliveryTrackingGateway & {
+      server: { to: jest.Mock };
+    };
+    gateway.server = { to: jest.fn(() => ({ emit })) } as never;
+
+    gateway.broadcastJobClaimed({
+      deliveryId: 33,
+      orderId: 501,
+      claimedAt: '2026-10-07T10:00:00.000Z',
+    });
+
+    expect(gateway.server.to).toHaveBeenCalledWith('rider-job-board');
+    expect(emit).toHaveBeenCalledWith(
+      DELIVERY_SOCKET_EVENTS.jobClaimed,
+      expect.objectContaining({ deliveryId: 33, orderId: 501 }),
     );
   });
 });

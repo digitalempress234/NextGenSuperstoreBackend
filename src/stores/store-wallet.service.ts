@@ -25,6 +25,7 @@ export class StoreWalletService {
   }
 
   async getTransactions(userId: number, storeId: number, page = 1, limit = 15) {
+    limit = Math.min(15, Math.max(1, limit));
     await this.assertOwner(userId, storeId);
 
     const wallet = await this.requireWallet(storeId);

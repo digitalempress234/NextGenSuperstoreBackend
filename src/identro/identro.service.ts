@@ -1,4 +1,11 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import type {
@@ -14,6 +21,8 @@ import type {
   IdentroFaceVerifyRequest,
   IdentroFaceVerifyResponse,
   IdentroIdentityExtracted,
+  IdentroLivenessCompletionRequest,
+  IdentroLivenessResult,
   IdentroLivenessSessionRequest,
   IdentroLivenessSessionResponse,
   IdentroNinResponse,
@@ -44,7 +53,76 @@ export class IdentroService {
   async mintSdkSessionToken(
     dto: IdentroLivenessSessionRequest,
   ): Promise<IdentroLivenessSessionResponse> {
-    return this.post<IdentroLivenessSessionResponse>('/merchant-api/face/requests', dto);
+    const request = {
+      ...dto,
+      ...(dto.serviceType === 'FACE_LIVENESS_ONLY' && !dto.sourceType
+        ? { sourceType: 'UPLOADED_REFERENCE' }
+        : {}),
+    };
+    const raw = await this.post<
+      Partial<IdentroLivenessSessionResponse> & {
+        reference?: string;
+        sdkSessionToken?: string;
+        token?: string;
+        data?: Partial<IdentroLivenessSessionResponse> & {
+          reference?: string;
+          sdkSessionToken?: string;
+          token?: string;
+        };
+      }
+    >('/merchant-api/face/liveness/sessions', request);
+    const data = raw.data ?? raw;
+    const sessionId = data.sessionId ?? data.reference;
+    const sdkToken = data.sdkToken ?? data.sdkSessionToken ?? data.token;
+    const expiresAt = data.expiresAt;
+    if (!sessionId) {
+      this.logger.error('Identro liveness session response is missing its reference.');
+      throw new InternalServerErrorException('Identro returned an invalid liveness session.');
+    }
+    return {
+      sessionId,
+      ...(sdkToken && { sdkToken }),
+      ...(expiresAt && { expiresAt }),
+    };
+  }
+
+  getLivenessCredentials(reference: string): Promise<Record<string, unknown>> {
+    return this.post<Record<string, unknown>>(
+      `/merchant-api/face/liveness/sessions/${encodeURIComponent(reference)}/credentials`,
+      {},
+    );
+  }
+
+  async completeLivenessSession(
+    reference: string,
+    payload: IdentroLivenessCompletionRequest = {},
+  ): Promise<IdentroLivenessResult> {
+    const raw = await this.post<Record<string, unknown>>(
+      `/merchant-api/face/liveness/sessions/${encodeURIComponent(reference)}/complete`,
+      payload,
+    );
+    const data = this.record(raw.data) ?? raw;
+    const liveness = this.record(data.liveness);
+    const providerStatus = this.string(data.status)?.toUpperCase() ?? null;
+    const decision = this.string(liveness?.decision)?.toUpperCase() ?? null;
+    const explicitPassed = this.boolean(liveness?.passed);
+    const passed =
+      explicitPassed ??
+      (decision === 'PASSED' || decision === 'PASS'
+        ? true
+        : ['FAILED', 'FAIL', 'REJECTED', 'SPOOF', 'NOT_LIVE'].includes(decision ?? '')
+          ? false
+          : null);
+
+    return {
+      reference: this.string(data.reference) ?? reference,
+      providerStatus,
+      passed,
+      score: this.number(liveness?.score),
+      threshold: this.number(liveness?.threshold),
+      decision,
+      raw,
+    };
   }
 
   async verifyNin(
@@ -231,16 +309,14 @@ export class IdentroService {
     if (!response.ok) {
       const text = await response.text();
       this.logger.error(`Identro ${path} failed: ${response.status} ${text}`);
-      throw new InternalServerErrorException(
-        `Identro verification call failed (${response.status}).`,
-      );
+      this.throwProviderError(response.status);
     }
 
     const json = (await response.json()) as { success?: boolean } & T;
 
     if (json.success === false) {
       this.logger.error(`Identro ${path} returned success=false: ${JSON.stringify(json)}`);
-      throw new InternalServerErrorException('Identro verification returned a failure response.');
+      throw new BadGatewayException('Identro verification returned a failure response.');
     }
 
     return json;
@@ -257,16 +333,43 @@ export class IdentroService {
     if (!response.ok) {
       const text = await response.text();
       this.logger.error(`Identro ${path} failed: ${response.status} ${text}`);
-      throw new InternalServerErrorException(
-        `Identro verification call failed (${response.status}).`,
-      );
+      this.throwProviderError(response.status);
     }
 
     const json = (await response.json()) as { success?: boolean } & T;
     if (json.success === false) {
       this.logger.error(`Identro ${path} returned success=false: ${JSON.stringify(json)}`);
-      throw new InternalServerErrorException('Identro verification returned a failure response.');
+      throw new BadGatewayException('Identro verification returned a failure response.');
     }
     return json;
+  }
+
+  private record(value: unknown): Record<string, unknown> | undefined {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  }
+
+  private string(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  private boolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+  }
+
+  private number(value: unknown): number | null {
+    const number = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  private throwProviderError(status: number): never {
+    if (status === 400 || status === 422) {
+      throw new BadRequestException('Identro rejected the verification request payload.');
+    }
+    if (status === 429) {
+      throw new ServiceUnavailableException('Identro rate limit reached. Please retry shortly.');
+    }
+    throw new BadGatewayException(`Identro verification service failed (${status}).`);
   }
 }

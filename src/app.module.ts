@@ -1,9 +1,9 @@
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { LoggingModule } from './logging/logging.module';
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 import { AdminModule } from './admin/admin.module';
 import { AuditModule } from './audit/audit.module';
@@ -39,17 +39,22 @@ import { ReferralsModule } from './referrals/referrals.module';
 import { ChatsModule } from './chats/chats.module';
 import { SupportModule } from './support/support.module';
 import { ScanningModule } from './scanning/scanning.module';
+import { ApiThrottlerGuard } from './common/api-throttler.guard';
 
 @Module({
   imports: [
     LoggingModule,
     ConfigModule.forRoot({ isGlobal: true }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60_000,
-        limit: 100,
-      },
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          ttl: Math.max(1_000, Number(config.get<string>('RATE_LIMIT_TTL_MS') ?? 60_000)),
+          limit: Math.max(1, Number(config.get<string>('RATE_LIMIT_MAX') ?? 300)),
+        },
+      ],
+    }),
     PrismaModule,
     AdminModule,
     AuditModule,
@@ -94,7 +99,7 @@ import { ScanningModule } from './scanning/scanning.module';
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: ApiThrottlerGuard,
     },
     {
       provide: APP_GUARD,

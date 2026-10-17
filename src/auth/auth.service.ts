@@ -236,7 +236,7 @@ export class AuthService {
 
   async refreshToken(refreshToken: string) {
     try {
-      const payload = await this.jwtService.verifyAsync<{ sub: number; sid: number }>(
+      const payload = await this.jwtService.verifyAsync<{ sub: number; sid: number; jti: string }>(
         refreshToken,
         {
           secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
@@ -244,16 +244,25 @@ export class AuthService {
       );
 
       const session = await this.prisma.adminSession.findUnique({ where: { id: payload.sid } });
+      const refreshIdentifierMatches = payload.jti
+        ? session?.sessionTokenHash === this.hashRefreshIdentifier(payload.jti)
+        : session?.refreshRotatedAt === null;
       if (
         !session ||
         session.userId !== payload.sub ||
+        !refreshIdentifierMatches ||
         session.revokedAt ||
         session.expiresAt <= new Date()
       ) {
         throw new UnauthorizedException('Session has expired or been revoked.');
       }
 
-      return this.issueTokens(session.userId, await this.getUserEmail(session.userId), session.id);
+      return this.issueTokens(
+        session.userId,
+        await this.getUserEmail(session.userId),
+        session.id,
+        session.sessionTokenHash,
+      );
     } catch (error) {
       if (error instanceof UnauthorizedException) {
         throw error;
@@ -302,19 +311,63 @@ export class AuthService {
     return user.email;
   }
 
-  private async issueTokens(userId: number, email: string, existingSessionId?: number) {
-    const sessionSecret = randomBytes(32).toString('hex');
-    const sessionTokenHash = createHash('sha256').update(sessionSecret).digest('hex');
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  accessTokenTtlMs() {
+    return this.durationMs(this.config.get<string>('JWT_ACCESS_TTL', '15m'), 15 * 60_000);
+  }
 
-    const session = existingSessionId
-      ? await this.prisma.adminSession.update({
-          where: { id: existingSessionId },
-          data: { sessionTokenHash, lastSeenAt: new Date(), expiresAt, revokedAt: null },
-        })
-      : await this.prisma.adminSession.create({
-          data: { userId, sessionTokenHash, expiresAt },
-        });
+  refreshTokenTtlMs() {
+    return this.durationMs(
+      this.config.get<string>('JWT_REFRESH_TTL', '30d'),
+      30 * 24 * 60 * 60_000,
+    );
+  }
+
+  private durationMs(value: string | undefined, fallback: number) {
+    if (!value) return fallback;
+    if (/^\d+$/.test(value)) return Number(value) * 1000;
+    const match = /^(\d+)(s|m|h|d)$/.exec(value.trim());
+    if (!match) return fallback;
+    const units = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
+    return Number(match[1]) * units[match[2] as keyof typeof units];
+  }
+
+  private hashRefreshIdentifier(identifier: string) {
+    return createHash('sha256').update(identifier).digest('hex');
+  }
+
+  private async issueTokens(
+    userId: number,
+    email: string,
+    existingSessionId?: number,
+    expectedSessionHash?: string,
+  ) {
+    const refreshIdentifier = randomBytes(32).toString('base64url');
+    const sessionTokenHash = this.hashRefreshIdentifier(refreshIdentifier);
+    const expiresAt = new Date(Date.now() + this.refreshTokenTtlMs());
+
+    let session;
+    if (existingSessionId) {
+      const rotated = await this.prisma.adminSession.updateMany({
+        where: {
+          id: existingSessionId,
+          userId,
+          ...(expectedSessionHash ? { sessionTokenHash: expectedSessionHash } : {}),
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { sessionTokenHash, refreshRotatedAt: new Date(), lastSeenAt: new Date(), expiresAt },
+      });
+      if (rotated.count !== 1) {
+        throw new UnauthorizedException('Refresh token was already rotated or revoked.');
+      }
+      session = await this.prisma.adminSession.findUniqueOrThrow({
+        where: { id: existingSessionId },
+      });
+    } else {
+      session = await this.prisma.adminSession.create({
+        data: { userId, sessionTokenHash, refreshRotatedAt: new Date(), expiresAt },
+      });
+    }
 
     const claims = { sub: userId, email, sid: session.id };
     const accessToken = await this.jwtService.signAsync(claims, {
@@ -322,7 +375,7 @@ export class AuthService {
       expiresIn: this.config.get<string>('JWT_ACCESS_TTL', '15m') as any,
     });
     const refreshToken = await this.jwtService.signAsync(
-      { sub: userId, sid: session.id },
+      { sub: userId, sid: session.id, jti: refreshIdentifier },
       {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
         expiresIn: this.config.get<string>('JWT_REFRESH_TTL', '30d') as any,

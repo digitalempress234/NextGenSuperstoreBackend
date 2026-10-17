@@ -5,9 +5,11 @@ import { AdminService } from './admin.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { StaffModule } from '../staff/staff.module';
 import { AdminListingsController } from './admin-listings.controller';
+import { PaymentsModule } from '../payments/payments.module';
+import { DeliveryModule } from '../delivery/delivery.module';
 
 @Module({
-  imports: [NotificationsModule, StaffModule],
+  imports: [NotificationsModule, StaffModule, PaymentsModule, DeliveryModule],
   controllers: [AdminController, AdminListingsController],
   providers: [AdminService],
   exports: [AdminService],

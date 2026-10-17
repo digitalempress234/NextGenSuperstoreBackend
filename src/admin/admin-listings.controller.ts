@@ -1,9 +1,11 @@
 import {
+  Body,
   Controller,
   ForbiddenException,
   Get,
   Param,
   ParseIntPipe,
+  Post,
   Query,
   Req,
   UseGuards,
@@ -29,6 +31,8 @@ import {
   ADMIN_VENDOR_EXAMPLE,
   ADMIN_VENDORS_EXAMPLE,
 } from '../common/docs-examples';
+import { ResolveRefundAttentionDto } from './dto/admin.dto';
+import { CompleteKlumpRefundDto } from '../bnpl/dto/klump.dto';
 
 @ApiTags('Admin directories')
 @ApiCookieAuth('purse_staff_token')
@@ -45,7 +49,7 @@ export class AdminListingsController {
   private paging(page?: string, limit?: string) {
     return {
       page: Math.max(1, Number(page) || 1),
-      limit: Math.min(100, Math.max(1, Number(limit) || 15)),
+      limit: Math.min(15, Math.max(1, Number(limit) || 15)),
     };
   }
   private check(req: { staffUser: AuthenticatedStaff }) {
@@ -120,6 +124,69 @@ export class AdminListingsController {
   ) {
     this.check(req);
     return this.admin.payout(source, id);
+  }
+
+  @Get('refunds')
+  @ApiOperation({ summary: 'Superadmin: list order refunds' })
+  refunds(
+    @Req() req: { staffUser: AuthenticatedStaff },
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+  ) {
+    this.check(req);
+    return this.admin.refunds(this.paging(page, limit), status);
+  }
+
+  @Get('refunds/:id')
+  @ApiOperation({ summary: 'Superadmin: get refund detail' })
+  refund(@Req() req: { staffUser: AuthenticatedStaff }, @Param('id', ParseIntPipe) id: number) {
+    this.check(req);
+    return this.admin.refund(id);
+  }
+
+  @Post('refunds/:id/retry')
+  @ApiOperation({ summary: 'Superadmin: retry a failed order refund' })
+  retryRefund(
+    @Req() req: { staffUser: AuthenticatedStaff },
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.check(req);
+    return this.admin.retryRefund(id);
+  }
+
+  @Post('refunds/:id/resolve-attention')
+  @ApiOperation({
+    summary: 'Superadmin: provide customer-approved bank details for a Paystack refund',
+  })
+  resolveRefundAttention(
+    @Req() req: { staffUser: AuthenticatedStaff },
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ResolveRefundAttentionDto,
+  ) {
+    this.check(req);
+    return this.admin.resolveRefundAttention(id, dto);
+  }
+
+  @Post('refunds/:id/complete-manual')
+  @ApiOperation({
+    summary: 'Superadmin: record completion of a Klump refund',
+    description:
+      'Complete the refund in the Klump merchant dashboard first, then record its provider reference here. Klump refund API documentation is not currently available.',
+  })
+  @OkExample({
+    id: 12,
+    provider: 'KLUMP',
+    status: 'SUCCEEDED',
+    providerRefundId: 'KLP-REFUND-12345',
+  })
+  completeManualRefund(
+    @Req() req: { staffUser: AuthenticatedStaff },
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CompleteKlumpRefundDto,
+  ) {
+    this.check(req);
+    return this.admin.completeManualRefund(id, dto.providerReference, req.staffUser.id);
   }
 
   @Get('stores')
