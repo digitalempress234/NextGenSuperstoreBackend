@@ -58,7 +58,7 @@ const permissionDefinitions: Array<[string, string]> = [
   ['deliveries.status.update', 'Update delivery status.'],
   ['reports.view', 'View reports.'],
   ['reports.export', 'Export sensitive reports.'],
-  ['notifications.send', 'Send operational notifications.'],
+  ['notifications.send', 'Create, schedule, and send operational or marketing notifications.'],
   ['integrations.manage', 'Manage API integrations and webhooks.'],
   ['risk.flag', 'Flag entities for risk review.'],
   ['risk.blacklist.create', 'Blacklist a risk entity.'],

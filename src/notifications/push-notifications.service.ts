@@ -4,6 +4,13 @@ import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getMessaging, Messaging } from 'firebase-admin/messaging';
 import { PrismaService } from '../prisma/prisma.service';
 
+export interface PushDeliveryResult {
+  enabled: boolean;
+  attempted: number;
+  successful: number;
+  failed: number;
+}
+
 @Injectable()
 export class PushNotificationsService implements OnModuleInit {
   private readonly logger = new Logger(PushNotificationsService.name);
@@ -30,25 +37,36 @@ export class PushNotificationsService implements OnModuleInit {
     }
   }
 
-  async send(userId: number, title: string, body: string, data?: Record<string, unknown>) {
-    if (!this.messaging) return;
+  async send(
+    userId: number,
+    title: string,
+    body: string,
+    data?: Record<string, unknown>,
+    imageUrl?: string,
+  ): Promise<PushDeliveryResult> {
+    if (!this.messaging) return { enabled: false, attempted: 0, successful: 0, failed: 0 };
     const devices = await this.prisma.deviceRegistration.findMany({
       where: { userId, enabled: true },
       select: { id: true, token: true },
     });
-    if (!devices.length) return;
+    if (!devices.length) return { enabled: true, attempted: 0, successful: 0, failed: 0 };
     let response;
     try {
       response = await this.messaging.sendEachForMulticast({
         tokens: devices.map((device) => device.token),
-        notification: { title, body },
+        notification: { title, body, ...(imageUrl ? { imageUrl } : {}) },
         data: Object.fromEntries(
           Object.entries(data ?? {}).map(([key, value]) => [key, String(value)]),
         ),
       });
     } catch (error) {
       this.logger.error(`FCM delivery failed for user ${userId}`, error);
-      return;
+      return {
+        enabled: true,
+        attempted: devices.length,
+        successful: 0,
+        failed: devices.length,
+      };
     }
     const invalidIds = response.responses
       .map((item, index) => ({ item, id: devices[index].id }))
@@ -65,5 +83,11 @@ export class PushNotificationsService implements OnModuleInit {
         data: { enabled: false },
       });
     }
+    return {
+      enabled: true,
+      attempted: devices.length,
+      successful: response.successCount,
+      failed: response.failureCount,
+    };
   }
 }

@@ -100,4 +100,69 @@ describe('notification event coverage', () => {
       }),
     );
   });
+
+  it('returns explicit voucher affordability before the customer attempts a claim', async () => {
+    const prisma = {
+      rewardVoucher: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'voucher-1',
+            code: 'SHIPFREE',
+            type: 'FIXED',
+            storeId: null,
+            store: null,
+            title: 'Free delivery',
+            subtitle: null,
+            description: null,
+            minimumOrderAmount: { toFixed: () => '0.00' },
+            discountPercent: null,
+            discountAmount: null,
+            pointsCost: 100,
+            giveawayEntries: 0,
+            expiresAt: null,
+          },
+        ]),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      rewardAccount: { findUnique: jest.fn().mockResolvedValue({ availablePoints: 25 }) },
+      userVoucher: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new RewardsService(prisma as never);
+
+    await expect(service.vouchers(7)).resolves.toMatchObject({
+      availablePoints: 25,
+      vouchers: [
+        {
+          id: 'voucher-1',
+          pointsCost: 100,
+          availablePoints: 25,
+          canClaim: false,
+          eligibilityReason: 'insufficient_points',
+        },
+      ],
+    });
+  });
+
+  it('returns required, available, and missing points for an unaffordable claim', async () => {
+    const tx = {
+      rewardVoucher: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'voucher-1', title: 'Free delivery', pointsCost: 100 }),
+      },
+      userVoucher: { findUnique: jest.fn().mockResolvedValue(null) },
+      rewardAccount: { upsert: jest.fn().mockResolvedValue({ availablePoints: 25 }) },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    const service = new RewardsService(prisma as never);
+
+    await expect(service.claim(7, 'voucher-1')).rejects.toMatchObject({
+      response: {
+        message: 'Insufficient reward points.',
+        data: { requiredPoints: 100, availablePoints: 25, shortfall: 75 },
+      },
+    });
+  });
 });

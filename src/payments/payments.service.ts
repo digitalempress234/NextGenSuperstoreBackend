@@ -187,6 +187,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           amount: payment.amount.toFixed(2),
           currency: payment.currency,
           expiresAt: charge.account_expires_at,
+          testMode: this.paystack.isTestMode(),
           displayText: charge.display_text ?? 'Transfer the exact amount to this account.',
         };
         return this.prisma.payment.update({
@@ -228,6 +229,23 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     });
     if (!group) return null;
     return this.summary(userId, group.id);
+  }
+
+  async resumeCheckout(userId: number, id: number) {
+    const group = await this.prisma.checkoutPaymentGroup.findFirst({
+      where: { id, userId },
+      include: { payment: true },
+    });
+    if (!group) throw new NotFoundException('Checkout payment group not found.');
+    if (group.status === 'FAILED') {
+      throw new ConflictException('This checkout was cancelled. Start a new checkout.');
+    }
+    if (group.status === 'PAID') return this.summary(userId, id);
+
+    if (group.paymentMethod === 'CARD' || group.paymentMethod === 'BANK_TRANSFER') {
+      await this.initialize(userId, id);
+    }
+    return this.summary(userId, id);
   }
 
   async summary(userId: number, id: number) {
@@ -770,6 +788,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       if (!expired) return { status: payment.status, paymentGroupId: payment.groups[0]?.id };
       outcome = 'failed';
     }
+    const lateRefundIds: number[] = [];
     await this.prisma.$transaction(
       async (tx) => {
         for (const group of payment.groups) await this.cart.lock(tx, group.userId);
@@ -777,9 +796,35 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         const current = await tx.payment.findUniqueOrThrow({ where: { id: payment.id } });
         if (current.status === 'PAID') return;
         if (current.status === 'FAILED' && outcome === 'success') {
-          throw new ConflictException(
-            'A released payment later succeeded; staff reconciliation is required.',
-          );
+          await tx.payment.update({
+            where: { id: payment.id },
+            data: { status: 'PAID', paidAt: new Date(), failureReason: null },
+          });
+          const releasedGroups = await tx.checkoutPaymentGroup.findMany({
+            where: { paymentId: payment.id },
+            include: { allocations: { include: { order: true } } },
+          });
+          for (const group of releasedGroups) {
+            for (const allocation of group.allocations) {
+              const refund = await tx.refund.upsert({
+                where: { orderId: allocation.orderId },
+                update: {},
+                create: {
+                  orderId: allocation.orderId,
+                  userId: group.userId,
+                  paymentId: payment.id,
+                  amount: allocation.amount,
+                  currency: group.currency,
+                  provider: 'PAYSTACK',
+                  status: 'PENDING',
+                  idempotencyKey: `LATE-PAYMENT-REFUND-${allocation.orderId}`,
+                  reason: `Payment completed after checkout ${group.id} was cancelled.`,
+                },
+              });
+              lateRefundIds.push(refund.id);
+            }
+          }
+          return;
         }
         if (current.status === 'FAILED') return;
         if (outcome === 'success') {
@@ -795,6 +840,13 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       },
       { timeout: 15000 },
     );
+    if (lateRefundIds.length) {
+      await Promise.allSettled(lateRefundIds.map((refundId) => this.processRefund(refundId)));
+      return {
+        status: 'REFUND_PENDING',
+        paymentGroupId: payment.groups[0]?.id,
+      };
+    }
     if (outcome === 'success') {
       await this.dispatchGroupConfirmations(payment.groups.map((group) => group.id));
     } else if (payment.status !== 'FAILED') {
@@ -900,6 +952,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         amount: amount.toFixed(2),
         currency: 'NGN',
         expiresAt: charge.account_expires_at,
+        testMode: this.paystack.isTestMode(),
         displayText: charge.display_text ?? 'Transfer the exact amount to this account.',
       };
       await this.prisma.payment.update({
@@ -994,7 +1047,8 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         firstName: user.firstName,
         lastName: user.lastName,
         phone: user.phoneNumber,
-        preferredBank: input.preferredBank,
+        preferredBank:
+          input.preferredBank ?? (this.paystack.isTestMode() ? 'test-bank' : undefined),
       });
       const immediate = this.dedicatedAccountFields(assignment);
       if (immediate.accountNumber) {
@@ -1613,17 +1667,53 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async cancel(userId: number, id: number) {
+    const existing = await this.prisma.checkoutPaymentGroup.findFirst({
+      where: { id, userId },
+      include: { payment: true },
+    });
+    if (!existing) throw new NotFoundException('Checkout not found.');
+    if (existing.status === 'PAID' || existing.payment?.status === 'PAID') {
+      throw new ConflictException('Payment has already completed and cannot be cancelled.');
+    }
+    if (existing.status === 'FAILED') return this.summary(userId, id);
+
+    if (
+      existing.payment?.provider === 'PAYSTACK' &&
+      existing.payment.transactionRef &&
+      existing.payment.status !== 'FAILED'
+    ) {
+      const verified = await this.verifyReference(existing.payment.transactionRef);
+      if (verified.status === 'PAID') {
+        throw new ConflictException('Payment has already completed and cannot be cancelled.');
+      }
+      if (verified.status === 'FAILED' || verified.status === 'REFUND_PENDING') {
+        return this.summary(userId, id);
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await this.cart.lock(tx, userId);
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM CheckoutPaymentGroup WHERE id = ${id} FOR UPDATE`,
       );
-      const group = await tx.checkoutPaymentGroup.findFirst({ where: { id, userId } });
+      const group = await tx.checkoutPaymentGroup.findFirst({
+        where: { id, userId },
+        include: { payment: true },
+      });
       if (!group) throw new NotFoundException('Checkout not found.');
-      if (group.paymentId)
-        throw new ConflictException(
-          'An initialized payment must be verified before stock can be released.',
-        );
+      if (group.status === 'PAID' || group.payment?.status === 'PAID') {
+        throw new ConflictException('Payment has already completed and cannot be cancelled.');
+      }
+      if (group.status === 'FAILED') return;
+      if (group.paymentId) {
+        await tx.payment.update({
+          where: { id: group.paymentId },
+          data: {
+            status: 'FAILED',
+            failureReason: 'Checkout cancelled by customer before payment completed.',
+          },
+        });
+      }
       await this.failGroup(tx, id);
     });
     return this.summary(userId, id);

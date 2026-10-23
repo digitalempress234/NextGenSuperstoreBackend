@@ -151,7 +151,7 @@ export class RewardsService {
       startsAt: { lte: now },
       OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
     };
-    const [definitions, total] = await Promise.all([
+    const [definitions, total, account] = await Promise.all([
       this.prisma.rewardVoucher.findMany({
         where,
         include: { store: { select: { storeName: true } } },
@@ -160,31 +160,49 @@ export class RewardsService {
         take: limit,
       }),
       this.prisma.rewardVoucher.count({ where }),
+      this.prisma.rewardAccount.findUnique({ where: { userId } }),
     ]);
     const owned = await this.prisma.userVoucher.findMany({
       where: { userId, voucherId: { in: definitions.map((voucher) => voucher.id) } },
     });
     const status = new Map(owned.map((item) => [item.voucherId, item.status.toLowerCase()]));
+    const availablePoints = account?.availablePoints ?? 0;
     return {
-      vouchers: definitions.map((v) => ({
-        id: v.id,
-        code: v.code,
-        type: v.type,
-        storeId: v.storeId,
-        storeName: v.store?.storeName,
-        title: v.title,
-        subtitle: v.subtitle,
-        description: v.description,
-        minimumOrderAmount: v.minimumOrderAmount.toFixed(2),
-        discountPercent: v.discountPercent?.toString(),
-        discountAmount: v.discountAmount?.toFixed(2),
-        status: status.get(v.id) ?? 'available',
-        tags: [
-          v.pointsCost ? `${v.pointsCost} points` : null,
-          v.giveawayEntries ? `${v.giveawayEntries} giveaway entries` : null,
-        ].filter(Boolean),
-        expiresAt: v.expiresAt,
-      })),
+      vouchers: definitions.map((v) => {
+        const voucherStatus = status.get(v.id) ?? 'available';
+        const canClaim = voucherStatus === 'available' && availablePoints >= v.pointsCost;
+        const eligibilityReason =
+          voucherStatus !== 'available'
+            ? `already_${voucherStatus}`
+            : canClaim
+              ? null
+              : 'insufficient_points';
+        return {
+          id: v.id,
+          code: v.code,
+          type: v.type,
+          storeId: v.storeId,
+          storeName: v.store?.storeName,
+          title: v.title,
+          subtitle: v.subtitle,
+          description: v.description,
+          minimumOrderAmount: v.minimumOrderAmount.toFixed(2),
+          discountPercent: v.discountPercent?.toString(),
+          discountAmount: v.discountAmount?.toFixed(2),
+          pointsCost: v.pointsCost,
+          giveawayEntries: v.giveawayEntries,
+          availablePoints,
+          canClaim,
+          eligibilityReason,
+          status: voucherStatus,
+          tags: [
+            v.pointsCost ? `${v.pointsCost} points` : null,
+            v.giveawayEntries ? `${v.giveawayEntries} giveaway entries` : null,
+          ].filter(Boolean),
+          expiresAt: v.expiresAt,
+        };
+      }),
+      availablePoints,
       total,
       page,
       limit,
@@ -213,7 +231,14 @@ export class RewardsService {
         update: {},
       });
       if (account.availablePoints < voucher.pointsCost)
-        throw new BadRequestException('Insufficient reward points.');
+        throw new BadRequestException({
+          message: 'Insufficient reward points.',
+          data: {
+            requiredPoints: voucher.pointsCost,
+            availablePoints: account.availablePoints,
+            shortfall: voucher.pointsCost - account.availablePoints,
+          },
+        });
       if (voucher.pointsCost)
         await tx.rewardAccount.update({
           where: { userId },

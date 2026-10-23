@@ -1,4 +1,10 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import {
+  CallHandler,
+  ExecutionContext,
+  HttpException,
+  Injectable,
+  NestInterceptor,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Observable, tap } from 'rxjs';
 import { randomUUID } from 'node:crypto';
@@ -51,6 +57,15 @@ export class RequestContextInterceptor implements NestInterceptor {
                 });
               },
               error: (error: unknown) => {
+                const statusCode =
+                  error instanceof HttpException
+                    ? error.getStatus()
+                    : typeof error === 'object' &&
+                        error !== null &&
+                        'status' in error &&
+                        typeof error.status === 'number'
+                      ? error.status
+                      : 500;
                 this.logger.error(
                   'request.failed',
                   error instanceof Error ? error.stack : undefined,
@@ -59,7 +74,7 @@ export class RequestContextInterceptor implements NestInterceptor {
                 this.logger.info('request.failed.metrics', {
                   eventType: 'http',
                   event: 'request.failed',
-                  statusCode: res.statusCode,
+                  statusCode,
                   durationMs: Date.now() - startedAt,
                 });
               },

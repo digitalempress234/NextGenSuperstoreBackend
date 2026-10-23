@@ -30,6 +30,18 @@ interface NotifyUserInput {
   eventKey?: string;
 }
 
+interface NotifyMarketingUserInput {
+  userId: number;
+  campaignId: number;
+  storeId?: number | null;
+  title: string;
+  message: string;
+  imageUrl?: string | null;
+  deepLink?: string | null;
+  includeInApp: boolean;
+  test?: boolean;
+}
+
 @Injectable()
 export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotificationsService.name);
@@ -272,6 +284,78 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
 
     return notification;
+  }
+
+  async notifyMarketingUser(input: NotifyMarketingUserInput) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('Notification recipient not found.');
+
+    const preference = await this.prisma.notificationPreference.findUnique({
+      where: { userId_type: { userId: input.userId, type: 'MARKETING' } },
+    });
+    const inAppEnabled = input.includeInApp && (preference?.inApp ?? true);
+    const pushEnabled = preference?.push ?? true;
+    const eventKey = input.test ? undefined : `push-campaign:${input.campaignId}:${input.userId}`;
+    const data: Prisma.InputJsonValue = {
+      type: 'MARKETING',
+      campaignId: input.campaignId,
+      ...(input.storeId ? { storeId: input.storeId } : {}),
+      ...(input.deepLink ? { deepLink: input.deepLink } : {}),
+      ...(input.test ? { test: true } : {}),
+    };
+
+    let notification = null;
+    if (inAppEnabled) {
+      notification = eventKey
+        ? await this.prisma.notification.upsert({
+            where: { eventKey },
+            update: {},
+            create: {
+              recipientId: user.id,
+              type: 'MARKETING',
+              title: input.title,
+              message: input.message,
+              priority: 'LOW',
+              data,
+              eventKey,
+            },
+          })
+        : await this.prisma.notification.create({
+            data: {
+              recipientId: user.id,
+              type: 'MARKETING',
+              title: `[TEST] ${input.title}`,
+              message: input.message,
+              priority: 'LOW',
+              data,
+            },
+          });
+      this.gateway.created(user.id, notification);
+    }
+
+    const push = pushEnabled
+      ? await this.push.send(
+          user.id,
+          input.test ? `[TEST] ${input.title}` : input.title,
+          input.message,
+          data as Record<string, unknown>,
+          input.imageUrl ?? undefined,
+        )
+      : {
+          enabled: Boolean(this.config.get('FIREBASE_SERVICE_ACCOUNT_JSON')),
+          attempted: 0,
+          successful: 0,
+          failed: 0,
+        };
+
+    return {
+      inAppDelivered: Boolean(notification),
+      push,
+      optedOut: !inAppEnabled && !pushEnabled,
+    };
   }
 
   async list(userId: number, query: NotificationListQueryDto) {

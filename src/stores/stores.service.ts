@@ -276,6 +276,12 @@ export class StoresService {
       throw new NotFoundException('Store not found.');
     }
 
+    if (!store.isActive) {
+      throw new ForbiddenException(
+        'Store approval is required before products can be added or updated.',
+      );
+    }
+
     const product = await this.prisma.product.findUnique({
       where: { id: body.productId },
     });

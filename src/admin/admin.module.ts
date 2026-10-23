@@ -7,10 +7,11 @@ import { StaffModule } from '../staff/staff.module';
 import { AdminListingsController } from './admin-listings.controller';
 import { PaymentsModule } from '../payments/payments.module';
 import { DeliveryModule } from '../delivery/delivery.module';
+import { PushCampaignsController } from './push-campaigns.controller';
 
 @Module({
   imports: [NotificationsModule, StaffModule, PaymentsModule, DeliveryModule],
-  controllers: [AdminController, AdminListingsController],
+  controllers: [AdminController, AdminListingsController, PushCampaignsController],
   providers: [AdminService],
   exports: [AdminService],
 })

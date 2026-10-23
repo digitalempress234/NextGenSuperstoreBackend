@@ -100,9 +100,46 @@ export class CheckoutController {
 
   @Post(':id/cancel')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Cancel an uninitialized unpaid checkout and release stock' })
+  @ApiOperation({
+    summary: 'Cancel an unpaid checkout and release its reserved stock',
+    description:
+      'Paystack is rechecked before cancellation. An initialized checkout may be cancelled while it remains unpaid, allowing the customer to start again with another payment method.',
+  })
+  @OkExample({
+    paymentGroupId: 20,
+    paymentStatus: 'failed',
+    paymentMethod: 'bank_transfer',
+    orders: [{ id: 101, currentStatus: 'CANCELLED' }],
+  })
+  @StandardErrors()
   cancel(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
     return this.payments.cancel(userId, id);
+  }
+
+  @Post(':id/resume')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Resume an existing unpaid checkout',
+    description:
+      'Returns the existing payment URL or bank-transfer instructions. If provider initialization was interrupted, the backend safely resumes it using the same payment reference.',
+  })
+  @OkExample({
+    paymentGroupId: 20,
+    paymentStatus: 'processing',
+    paymentMethod: 'bank_transfer',
+    transferInstructions: {
+      bankName: 'Paystack-Titan',
+      accountName: 'SUPERSTORE / CUSTOMER',
+      accountNumber: '1234567890',
+      amount: '121500.00',
+      currency: 'NGN',
+      expiresAt: '2026-10-18T16:30:00.000Z',
+      testMode: false,
+    },
+  })
+  @StandardErrors()
+  resume(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) id: number) {
+    return this.payments.resumeCheckout(userId, id);
   }
 
   @Post()

@@ -235,7 +235,11 @@ export class StoresController {
   @RequirePermissions('products.price.update')
   @Post(':id/products')
   @ApiCookieAuth('purse_access_token')
-  @ApiOperation({ summary: 'Create or update a store-specific product offer' })
+  @ApiOperation({
+    summary: 'Create or update a store-specific product offer',
+    description:
+      'The store must already be approved and active. Pending or rejected stores receive 403 Forbidden.',
+  })
   @ApiParam({ name: 'id', example: 10 })
   @OkExample({
     id: 900,

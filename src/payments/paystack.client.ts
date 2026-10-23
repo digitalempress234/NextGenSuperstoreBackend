@@ -13,6 +13,10 @@ interface PaystackResponse<T> {
 export class PaystackClient {
   constructor(private readonly config: ConfigService) {}
 
+  isTestMode(): boolean {
+    return this.config.getOrThrow<string>('PAYSTACK_SECRET_KEY').startsWith('sk_test_');
+  }
+
   private headers(): Record<string, string> {
     return {
       Authorization: `Bearer ${this.config.getOrThrow<string>('PAYSTACK_SECRET_KEY')}`,

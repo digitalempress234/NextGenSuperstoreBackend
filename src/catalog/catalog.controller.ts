@@ -15,6 +15,7 @@ import { Public } from '../auth/public.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample, RequireAuth, StandardErrors } from '../common/api-docs';
 import { CurrentUser } from '../common/current-user.decorator';
+import { RequireRoles } from '../common/decorators/roles.decorator';
 import {
   CreateCategoryDto,
   CreateProductDto,
@@ -144,10 +145,10 @@ export class CatalogController {
     return this.catalog.getCategory(id);
   }
 
-
   @Post('categories')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('products.create')
+  @RequireRoles('OPERATIONS_ADMIN', 'MERCHANT_ADMIN', 'SUPER_ADMIN')
   @RequireAuth(['products.create'], ['OPERATIONS_ADMIN', 'MERCHANT_ADMIN', 'SUPER_ADMIN'])
   @ApiOperation({
     summary: 'Create a catalog category',
@@ -165,6 +166,7 @@ export class CatalogController {
   @Post('products')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('products.create')
+  @RequireRoles('OPERATIONS_ADMIN', 'MERCHANT_ADMIN', 'SUPER_ADMIN')
   @RequireAuth(['products.create'], ['OPERATIONS_ADMIN', 'MERCHANT_ADMIN', 'SUPER_ADMIN'])
   @ApiOperation({
     summary: 'Create a canonical product in the master catalog',
@@ -188,6 +190,7 @@ export class CatalogController {
   @Patch('products/:id')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('products.update')
+  @RequireRoles('OPERATIONS_ADMIN', 'MERCHANT_ADMIN', 'SUPER_ADMIN')
   @RequireAuth(['products.update'], ['OPERATIONS_ADMIN', 'MERCHANT_ADMIN', 'SUPER_ADMIN'])
   @ApiOperation({
     summary: 'Update a canonical product',
@@ -205,6 +208,7 @@ export class CatalogController {
   @Delete('products/:id')
   @ApiCookieAuth('purse_access_token')
   @RequirePermissions('products.archive')
+  @RequireRoles('OPERATIONS_ADMIN', 'SUPER_ADMIN')
   @RequireAuth(['products.archive'], ['OPERATIONS_ADMIN', 'SUPER_ADMIN'])
   @ApiOperation({
     summary: 'Archive (soft-delete) a catalog product',

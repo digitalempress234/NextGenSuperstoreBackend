@@ -108,6 +108,9 @@ describe('Checkout OpenAPI contract shared by Swagger and Scalar', () => {
       expect(operation('/addresses', 'post')).toBeDefined();
       expect(operation('/pickup-stations', 'get')).toBeDefined();
       expect(operation('/wallet/balance', 'get')).toBeDefined();
+      expect(operation('/checkout/pending', 'get')).toBeDefined();
+      expect(operation('/checkout/{id}/resume', 'post')).toBeDefined();
+      expect(operation('/checkout/{id}/cancel', 'post')).toBeDefined();
       expect(operation('/orders', 'post')).toBeDefined();
       expect(operation('/orders/{id}/track', 'get')).toBeDefined();
       expect(operation('/deliveries/mine', 'get')).toBeDefined();

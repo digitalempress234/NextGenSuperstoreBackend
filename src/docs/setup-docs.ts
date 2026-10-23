@@ -91,7 +91,7 @@ export function setupScalarDocs(app: INestApplication) {
   const adminConfig = baseConfig
     .setDescription(
       'API for System Administrators and Back-Office Staff. ' +
-        'Uses the purse_staff_token cookie. Motorcycle rider KYC combines automatic identity, liveness, and driver-licence checks with manual motorcycle photo/plate and registration review. Staff can review items separately or use the audited atomic rider decision endpoint; automatic failures cannot be overridden by bulk approval. SUPER_ADMIN directory endpoints include paginated customers, orders, payouts, stores, riders, vendors, and campaigns with their detail pages. Other staff access remains role-scoped.',
+        'Uses the purse_staff_token cookie. Motorcycle rider KYC combines automatic identity, liveness, and driver-licence checks with manual motorcycle photo/plate and registration review. Staff can review items separately or use the audited atomic rider decision endpoint; automatic failures cannot be overridden by bulk approval. SUPER_ADMIN directory endpoints include paginated customers, orders, payouts, stores, riders, vendors, and campaigns with their detail pages. Audited advertising push campaigns support drafts, test sends, audience and location targeting, immediate or scheduled delivery, cancellation, delivery totals, customer MARKETING opt-out preferences, and approval or rejection of vendor-created store campaigns. Other staff access remains role-scoped.',
     )
     .build();
   const adminDocument = SwaggerModule.createDocument(app, adminConfig, {
@@ -135,7 +135,7 @@ export function setupScalarDocs(app: INestApplication) {
 
   const storeConfig = baseConfig
     .setDescription(
-      'API for VENDOR and STORE_AGENT roles using purse_access_token. Includes store orders, campaigns, inbox, serving riders, competitive-deal comparison, settings, catalogue operations, packing scans, handoff QR generation, fulfillment, wallets, and notifications.',
+      'API for VENDOR and STORE_AGENT roles using purse_access_token. Includes store orders, campaigns, inbox, serving riders, competitive-deal comparison, settings, catalogue operations, packing scans, handoff QR generation, fulfillment, wallets, and notifications. Approved store owners can create push campaigns for active customers who previously ordered from their store, test only on their own device, obtain administrator approval, then send immediately or schedule delivery. MARKETING opt-outs are honored and each store is limited to three campaign sends per day.',
     )
     .build();
   const storeDocument = SwaggerModule.createDocument(app, storeConfig, {
@@ -219,7 +219,7 @@ export function setupScalarDocs(app: INestApplication) {
   const publicConfig = baseConfig
     .setDescription(
       'API for Customers and Public access. ' +
-        'Authenticated CUSTOMER routes use the purse_access_token HttpOnly cookie on web or a Bearer access token in native apps; public routes require neither. Includes passkeys, rotating refresh sessions, catalog and barcode lookup, rewards, referrals, cart, checkout, Klump provider-backed BNPL with signed webhooks and server-side verification, wallet deposit/withdrawal/ledger, asynchronous refunds, state-gated order QR display, orders/returns, store chat, support conversations, Socket.IO notifications, and FCM push triggers for orders, payments, wallet funding, delivery, chat, support, rewards, and KYC.',
+        'Authenticated CUSTOMER routes use the purse_access_token HttpOnly cookie on web or a Bearer access token in native apps; public routes require neither. Includes passkeys, rotating refresh sessions, catalog and barcode lookup, rewards, referrals, cart, checkout, Klump provider-backed BNPL with signed webhooks and server-side verification, wallet deposit/withdrawal/ledger, asynchronous refunds, state-gated order QR display, orders/returns, store chat, support conversations, Socket.IO notifications, FCM push triggers for orders, payments, wallet funding, delivery, chat, support, rewards, and KYC, plus an independent MARKETING preference for advertising opt-out.',
     )
     .build();
   const publicDocument = SwaggerModule.createDocument(app, publicConfig, {

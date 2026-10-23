@@ -59,7 +59,11 @@ export class RewardsController {
   }
   @Post('vouchers/:id/claim')
   @RequirePermissions('rewards.redeem')
-  @ApiOperation({ summary: 'Customer: claim a reward voucher' })
+  @ApiOperation({
+    summary: 'Customer: claim a reward voucher',
+    description:
+      'Requires the pointsCost returned by GET /rewards/vouchers. The listing also returns availablePoints, canClaim, and eligibilityReason so clients can disable unavailable claims.',
+  })
   claim(@CurrentUser('id') userId: number, @Param('id') id: string) {
     return this.rewards.claim(userId, id);
   }

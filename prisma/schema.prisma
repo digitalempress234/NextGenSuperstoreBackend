@@ -183,6 +183,7 @@ enum NotificationType {
   DELIVERY_AVAILABLE
   SUPPORT_REPLY
   REWARD_UPDATE
+  MARKETING
 }
 
 enum NotificationPriority {
@@ -205,6 +206,38 @@ enum DevicePlatform {
   ANDROID
   IOS
   WEB
+}
+
+enum PushCampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum PushCampaignAudienceType {
+  ALL_USERS
+  CUSTOMERS
+  RIDERS
+  VENDORS
+  SELECTED_USERS
+  STORE_CUSTOMERS
+}
+
+enum PushCampaignApprovalStatus {
+  NOT_REQUIRED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PushCampaignDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SKIPPED
 }
 
 enum VehicleOwnership {
@@ -376,6 +409,8 @@ model User {
   orderItemScans          OrderItemScan[]
   orderConfirmationOutbox OrderConfirmationOutbox[]
   walletFundingAccount    WalletFundingAccount?
+  pushCampaignDeliveries  PushCampaignDelivery[]
+  createdPushCampaigns    PushCampaign[]              @relation("PushCampaignUserCreator")
 }
 
 model Role {
@@ -543,8 +578,10 @@ model StaffUser {
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
 
-  sessions  StaffSession[]
-  auditLogs AuditLog[]     @relation("StaffAuditActor")
+  sessions              StaffSession[]
+  auditLogs             AuditLog[]     @relation("StaffAuditActor")
+  pushCampaigns         PushCampaign[] @relation("PushCampaignStaffCreator")
+  reviewedPushCampaigns PushCampaign[] @relation("PushCampaignReviewer")
 
   @@index([role, status])
 }
@@ -768,6 +805,7 @@ model Store {
   withdrawals      StoreWithdrawal[]
   chats            ChatConversation[]
   vouchers         RewardVoucher[]
+  pushCampaigns    PushCampaign[]
 
   @@index([ownerUserId])
   @@index([city, state, isActive])
@@ -1312,9 +1350,9 @@ model RiderDocument {
   qoreidReference String? // QoreID transaction reference returned after verification
   qoreidStatus    String? // "VERIFIED" | "UNVERIFIED" | "PARTIAL" | null
   qoreidRaw       Json? // Full QoreID response snapshot stored for audit trail
-  faceMatchScore  Decimal?       @db.Decimal(5, 2) // 0-100 confidence score from face-match endpoint
-  rider           RiderProfile   @relation(fields: [riderId], references: [id], onDelete: Cascade)
-  uploadedBy      User?          @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  faceMatchScore  Decimal?     @db.Decimal(5, 2) // 0-100 confidence score from face-match endpoint
+  rider           RiderProfile @relation(fields: [riderId], references: [id], onDelete: Cascade)
+  uploadedBy      User?        @relation("DocumentUploader", fields: [uploadedById], references: [id])
 
   @@index([riderId, type, status])
 }
@@ -1698,6 +1736,68 @@ model Notification {
   recipient   User                 @relation(fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([recipientId, isRead, createdAt])
+}
+
+model PushCampaign {
+  id              Int                        @id @default(autoincrement())
+  title           String
+  message         String                     @db.Text
+  imageUrl        String?                    @db.Text
+  deepLink        String?                    @db.Text
+  audienceType    PushCampaignAudienceType
+  audienceFilter  Json?
+  includeInApp    Boolean                    @default(true)
+  status          PushCampaignStatus         @default(DRAFT)
+  approvalStatus  PushCampaignApprovalStatus @default(NOT_REQUIRED)
+  rejectionReason String?                    @db.Text
+  reviewedAt      DateTime?
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  sentAt          DateTime?
+  cancelledAt     DateTime?
+  totalRecipients Int                        @default(0)
+  deliveredCount  Int                        @default(0)
+  failedCount     Int                        @default(0)
+  skippedCount    Int                        @default(0)
+  lastError       String?                    @db.Text
+  createdById     Int?
+  createdByUserId Int?
+  storeId         Int?
+  reviewedById    Int?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  createdBy       StaffUser?                 @relation("PushCampaignStaffCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdByUser   User?                      @relation("PushCampaignUserCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  store           Store?                     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  reviewedBy      StaffUser?                 @relation("PushCampaignReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  deliveries      PushCampaignDelivery[]
+
+  @@index([status, scheduledAt])
+  @@index([createdById, createdAt])
+  @@index([createdByUserId, createdAt])
+  @@index([storeId, status, createdAt])
+  @@index([approvalStatus, createdAt])
+}
+
+model PushCampaignDelivery {
+  id             Int                        @id @default(autoincrement())
+  campaignId     Int
+  userId         Int
+  status         PushCampaignDeliveryStatus @default(PENDING)
+  pushAttempted  Int                        @default(0)
+  pushSuccessful Int                        @default(0)
+  pushFailed     Int                        @default(0)
+  errorMessage   String?                    @db.Text
+  attemptedAt    DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  campaign       PushCampaign               @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user           User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, userId])
+  @@index([campaignId, status])
+  @@index([userId, createdAt])
 }
 
 model OrderConfirmationOutbox {

@@ -66,6 +66,7 @@ describe('Paystack dedicated wallet funding', () => {
       },
     };
     const paystack = {
+      isTestMode: jest.fn().mockReturnValue(true),
       createBankTransferCharge: jest.fn().mockImplementation((reference: string) => ({
         reference,
         status: 'pending_bank_transfer',
@@ -92,6 +93,7 @@ describe('Paystack dedicated wallet funding', () => {
         transferInstructions: expect.objectContaining({
           accountNumber: '1260257501',
           amount: '5000.00',
+          testMode: true,
         }),
       }),
     );
@@ -498,6 +500,17 @@ describe('Payment verification', () => {
         findUniqueOrThrow: jest.fn().mockResolvedValue(payment),
         update: jest.fn(),
       },
+      checkoutPaymentGroup: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 2,
+            userId: 7,
+            currency: 'NGN',
+            allocations: [{ orderId: 9, amount: decimal('39.85'), order: { id: 9 } }],
+          },
+        ]),
+      },
+      refund: { upsert: jest.fn().mockResolvedValue({ id: 91 }) },
       checkoutPaymentAllocation: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn(),
       $transaction: jest.fn(),
@@ -575,6 +588,28 @@ describe('Payment verification', () => {
     expect(complete).not.toHaveBeenCalled();
     expect(paystack.verify).not.toHaveBeenCalled();
   });
+  it('automatically starts refunds if a cancelled checkout is paid late', async () => {
+    const { service, payment, db, complete } = fixture();
+    payment.status = 'FAILED';
+    jest.spyOn(service, 'processRefund').mockResolvedValue({ id: 91 } as never);
+
+    await expect(service.verifyReference('ref')).resolves.toEqual({
+      status: 'REFUND_PENDING',
+      paymentGroupId: 2,
+    });
+    expect(complete).not.toHaveBeenCalled();
+    expect(db.refund.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { orderId: 9 },
+        create: expect.objectContaining({
+          paymentId: 1,
+          amount: decimal('39.85'),
+          status: 'PENDING',
+        }),
+      }),
+    );
+    expect(service.processRefund).toHaveBeenCalledWith(91);
+  });
 });
 
 describe('Cart clearing and settlement idempotence', () => {
@@ -620,6 +655,110 @@ describe('Cart clearing and settlement idempotence', () => {
     expect(db.cartItem.delete).not.toHaveBeenCalled();
     expect(settlements.settleOrder).toHaveBeenCalledTimes(1);
     expect(db.orderConfirmationOutbox.upsert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Pending checkout recovery', () => {
+  function fixture(group: Record<string, unknown>) {
+    const db = {
+      $queryRaw: jest.fn(),
+      $transaction: jest.fn(),
+      checkoutPaymentGroup: {
+        findFirst: jest.fn().mockResolvedValue(group),
+      },
+      payment: { update: jest.fn() },
+    };
+    db.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback(db));
+    const cart = { lock: jest.fn() };
+    const service = new PaymentsService(
+      db as unknown as PrismaService,
+      {} as PaystackClient,
+      {} as SettlementsService,
+      cart as unknown as CartService,
+      {} as NotificationsService,
+    );
+    return { service, db, cart };
+  }
+
+  it('resumes an interrupted Paystack checkout and returns its current summary', async () => {
+    const group = {
+      id: 20,
+      userId: 7,
+      status: 'PROCESSING',
+      paymentMethod: 'BANK_TRANSFER',
+      payment: null,
+    };
+    const { service } = fixture(group);
+    jest.spyOn(service, 'initialize').mockResolvedValue({ id: 50 } as never);
+    jest.spyOn(service, 'summary').mockResolvedValue({ paymentGroupId: 20 } as never);
+
+    await expect(service.resumeCheckout(7, 20)).resolves.toEqual({ paymentGroupId: 20 });
+    expect(service.initialize).toHaveBeenCalledWith(7, 20);
+  });
+
+  it('cancels an initialized checkout after Paystack confirms it is still unpaid', async () => {
+    const group = {
+      id: 20,
+      userId: 7,
+      status: 'PROCESSING',
+      paymentId: 50,
+      paymentMethod: 'BANK_TRANSFER',
+      payment: {
+        id: 50,
+        provider: 'PAYSTACK',
+        status: 'PENDING',
+        transactionRef: 'PUR-20-test',
+      },
+    };
+    const { service, db, cart } = fixture(group);
+    jest
+      .spyOn(service, 'verifyReference')
+      .mockResolvedValue({ status: 'PENDING', paymentGroupId: 20 });
+    jest.spyOn(service, 'failGroup').mockResolvedValue(undefined);
+    jest.spyOn(service, 'summary').mockResolvedValue({
+      paymentGroupId: 20,
+      paymentStatus: 'failed',
+    } as never);
+
+    await expect(service.cancel(7, 20)).resolves.toEqual({
+      paymentGroupId: 20,
+      paymentStatus: 'failed',
+    });
+    expect(service.verifyReference).toHaveBeenCalledWith('PUR-20-test');
+    expect(db.payment.update).toHaveBeenCalledWith({
+      where: { id: 50 },
+      data: {
+        status: 'FAILED',
+        failureReason: 'Checkout cancelled by customer before payment completed.',
+      },
+    });
+    expect(service.failGroup).toHaveBeenCalledWith(db, 20);
+    expect(cart.lock).toHaveBeenCalledWith(db, 7);
+  });
+
+  it('refuses cancellation when verification confirms payment completed', async () => {
+    const group = {
+      id: 20,
+      userId: 7,
+      status: 'PROCESSING',
+      paymentId: 50,
+      paymentMethod: 'CARD',
+      payment: {
+        id: 50,
+        provider: 'PAYSTACK',
+        status: 'PENDING',
+        transactionRef: 'PUR-20-paid',
+      },
+    };
+    const { service } = fixture(group);
+    jest.spyOn(service, 'verifyReference').mockResolvedValue({
+      status: 'PAID',
+      paymentGroupId: 20,
+    });
+
+    await expect(service.cancel(7, 20)).rejects.toThrow(
+      'Payment has already completed and cannot be cancelled.',
+    );
   });
 });
 

@@ -99,6 +99,7 @@ export class WalletController {
       amount: '5000.00',
       currency: 'NGN',
       expiresAt: '2026-10-01T18:30:00.000Z',
+      testMode: false,
     },
   })
   @StandardErrors()

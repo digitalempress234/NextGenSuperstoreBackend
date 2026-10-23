@@ -49,6 +49,7 @@ describe('Remaining endpoint boundaries', () => {
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
+      rewardAccount: { findUnique: jest.fn().mockResolvedValue(null) },
       userVoucher: { findMany: jest.fn().mockResolvedValue([]) },
       chatConversation: {
         findMany: jest.fn().mockResolvedValue([]),

@@ -60,7 +60,7 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'Get notification delivery preferences',
     description:
-      'Preferences may be configured for orders, payments, wallet funding, delivery, rider jobs, chat messages, support replies, rewards, and KYC updates.',
+      'Preferences may be configured independently for orders, payments, wallet funding, delivery, rider jobs, chat messages, support replies, rewards, KYC updates, and MARKETING campaigns.',
   })
   @OkExample(
     [{ type: 'ORDER_STATUS_UPDATE', inApp: true, email: true, push: true }],
@@ -71,7 +71,11 @@ export class NotificationsController {
   }
 
   @Patch('preferences')
-  @ApiOperation({ summary: 'Update an in-app, email, or push notification preference' })
+  @ApiOperation({
+    summary: 'Update an in-app, email, or push notification preference',
+    description:
+      'Use type MARKETING to opt in or out of advertising notifications without affecting transactional alerts.',
+  })
   @OkExample(
     { type: 'ORDER_STATUS_UPDATE', inApp: true, email: true, push: true },
     'Notification preference updated',
@@ -87,7 +91,7 @@ export class NotificationsController {
   @ApiOperation({
     summary: 'Register or refresh an FCM device token',
     description:
-      'Used for background notifications including orders, payments, wallet funding, delivery jobs, chat, support, rewards, and KYC. Foreground clients may also connect to Socket.IO namespace /notifications and listen for notification.created.',
+      'Used for background notifications including orders, payments, wallet funding, delivery jobs, chat, support, rewards, KYC, and opted-in marketing campaigns. Foreground clients may also connect to Socket.IO namespace /notifications and listen for notification.created.',
   })
   registerDevice(@CurrentUser('id') userId: number, @Body() dto: RegisterNotificationDeviceDto) {
     return this.notificationsService.registerDevice(userId, dto);
