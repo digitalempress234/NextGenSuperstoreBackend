@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import {
 } from './dto/notification.dto';
 import { NotificationsGateway } from './notifications.gateway';
 import { PushNotificationsService } from './push-notifications.service';
+import { ReceiptsService } from '../receipts/receipts.service';
 
 interface NotifyUserInput {
   userId: number;
@@ -54,6 +56,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly gateway: NotificationsGateway,
     private readonly push: PushNotificationsService,
+    @Optional() private readonly receipts?: ReceiptsService,
   ) {}
 
   onModuleInit() {
@@ -143,7 +146,14 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
             },
             allocations: {
               take: 1,
-              include: { paymentGroup: { select: { paymentMethod: true } } },
+              include: {
+                paymentGroup: {
+                  select: {
+                    paymentMethod: true,
+                    receipt: { select: { id: true } },
+                  },
+                },
+              },
             },
           },
         },
@@ -209,6 +219,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         job.user.id,
         eventKey,
       );
+      const receiptId = job.order.allocations[0]?.paymentGroup.receipt?.id;
+      if (receiptId && this.receipts) {
+        await this.receipts.sendEmailById(receiptId, `receipt-issued:${receiptId}`);
+      }
     }
     await this.prisma.orderConfirmationOutbox.update({
       where: { id: job.id },

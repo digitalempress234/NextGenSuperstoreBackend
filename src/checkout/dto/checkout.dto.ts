@@ -58,3 +58,29 @@ export class PlaceOrderDto extends OmitType(CreateCheckoutDto, [
   @IsIn(['card', 'bank_transfer', 'wallet'])
   paymentMethod!: 'card' | 'bank_transfer' | 'wallet';
 }
+
+export class BuyNowReviewDto extends OmitType(CreateCheckoutDto, ['cartId'] as const) {
+  @ApiProperty({ example: 900, description: 'The exact store-specific offer being purchased.' })
+  @IsInt()
+  @IsPositive()
+  storeProductId!: number;
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  quantity = 1;
+}
+
+export class BuyNowOrderDto extends OmitType(PlaceOrderDto, ['cartId'] as const) {
+  @ApiProperty({ example: 900, description: 'The exact store-specific offer being purchased.' })
+  @IsInt()
+  @IsPositive()
+  storeProductId!: number;
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  quantity = 1;
+}

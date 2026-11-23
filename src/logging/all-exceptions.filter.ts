@@ -25,7 +25,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const errorName = exception instanceof Error ? exception.name : 'UnknownError';
     const details =
       typeof message === 'object' && message !== null
-        ? (message as { message?: string | string[]; errors?: unknown; data?: unknown })
+        ? (message as {
+            code?: string;
+            message?: string | string[];
+            errors?: unknown;
+            data?: unknown;
+          })
         : undefined;
 
     this.logger.error(
@@ -42,7 +47,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json({
       success: false,
       error: {
-        code: this.mapCode(status),
+        code: details?.code ?? this.mapCode(status),
         message: typeof message === 'string' ? message : (details?.message ?? 'Request failed'),
         ...(details?.errors !== undefined ? { errors: details.errors } : {}),
         ...(details?.data !== undefined ? { data: details.data } : {}),

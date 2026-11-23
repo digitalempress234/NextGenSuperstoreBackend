@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { CartService } from '../cart/cart.service';
 import { PaystackClient } from './paystack.client';
 import { kobo, money } from '../common/money';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ReceiptsService } from '../receipts/receipts.service';
 
 type CartSnapshotLine = { cartItemId: number; quantity: number };
 
@@ -29,6 +31,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     private readonly settlements: SettlementsService,
     private readonly cart: CartService,
     private readonly notifications: NotificationsService,
+    @Optional() private readonly receipts?: ReceiptsService,
   ) {}
 
   onModuleInit() {
@@ -253,6 +256,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       where: { id, userId },
       include: {
         payment: true,
+        receipt: { select: { receiptNumber: true, status: true, issuedAt: true } },
         allocations: { include: { order: { include: { items: true, pickup: true } } } },
       },
     });
@@ -284,6 +288,12 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       paymentReference: group.payment?.transactionRef ?? null,
       paymentUrl: group.payment?.paymentUrl ?? null,
       transferInstructions: paymentMetadata?.transferInstructions ?? null,
+      receipt: group.receipt
+        ? {
+            ...group.receipt,
+            pdfUrl: `/purse/v1/receipts/${encodeURIComponent(group.receipt.receiptNumber)}/pdf`,
+          }
+        : null,
       subtotal: orders.reduce((sum, order) => sum.add(order.subtotal), new Prisma.Decimal(0)),
       shippingFee: orders.reduce((sum, order) => sum.add(order.shippingFee), new Prisma.Decimal(0)),
       tax: orders.reduce((sum, order) => sum.add(order.taxAmount), new Prisma.Decimal(0)),
@@ -520,6 +530,14 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       where: { id: paymentId },
       data: { status: refunded.gte(payment.amount) ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
     });
+    if (this.prisma.receipt) {
+      await this.prisma.receipt.updateMany({
+        where: { paymentId },
+        data: {
+          status: refunded.gte(payment.amount) ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
+        },
+      });
+    }
   }
 
   private async notifyRefund(id: number) {
@@ -1335,7 +1353,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       where: { id },
       include: { allocations: { include: { order: true } } },
     });
-    if (group.status === 'PAID' && group.activeCartId == null) return;
+    if (group.status === 'PAID' && group.activeCartId == null) {
+      await this.receipts?.issueForGroup(tx, id);
+      return;
+    }
     if (group.status === 'FAILED') throw new ConflictException('Cannot pay a released checkout.');
     for (const { order } of group.allocations) {
       if (order.currentStatus === 'ORDER_RECEIVED') {
@@ -1398,6 +1419,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       where: { id },
       data: { status: 'PAID', activeCartId: null },
     });
+    await this.receipts?.issueForGroup(tx, id);
   }
 
   async dispatchGroupConfirmations(groupIds: number[]) {

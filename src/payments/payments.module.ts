@@ -8,9 +8,10 @@ import { PaystackClient } from './paystack.client';
 import { WalletController } from './wallet.controller';
 import { PaymentWebhookController } from './payment-webhook.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ReceiptsModule } from '../receipts/receipts.module';
 
 @Module({
-  imports: [SettlementsModule, CartModule, NotificationsModule],
+  imports: [SettlementsModule, CartModule, NotificationsModule, ReceiptsModule],
   controllers: [PaymentsController, WalletController, PaymentWebhookController],
   providers: [PaymentsService, PaystackClient],
   exports: [PaymentsService],

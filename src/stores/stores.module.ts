@@ -7,11 +7,12 @@ import { StoresController } from './stores.controller';
 import { StoresService } from './stores.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { StorePushCampaignsController } from './store-push-campaigns.controller';
+import { StoreAvailabilityService } from './store-availability.service';
 
 @Module({
   imports: [QoreIDModule, NotificationsModule],
   controllers: [StoresController, StorePushCampaignsController],
-  providers: [StoresService, StoreCacService, StoreWalletService],
-  exports: [StoresService],
+  providers: [StoresService, StoreCacService, StoreWalletService, StoreAvailabilityService],
+  exports: [StoresService, StoreAvailabilityService],
 })
 export class StoresModule {}

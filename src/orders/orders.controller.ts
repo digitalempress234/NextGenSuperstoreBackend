@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -9,6 +11,7 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CheckoutService } from '../checkout/checkout.service';
 import { PlaceOrderDto } from '../checkout/dto/checkout.dto';
@@ -22,6 +25,7 @@ import { CancelOrderDto, ReturnOrderDto, UpdateOrderStatusDto } from './dto/orde
 import { OrdersService } from './orders.service';
 import { OrderStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../common/types';
+import { PurchaseHistoryEmailDto } from './dto/purchase-history-email.dto';
 
 @ApiTags('Orders')
 @ApiCookieAuth('purse_access_token')
@@ -131,6 +135,29 @@ export class OrdersController {
   @StandardErrors()
   mine(@CurrentUser('id') userId: number, @Query() query: ListOrdersDto) {
     return this.ordersService.mine(userId, query.page, query.limit, query.status);
+  }
+
+  @Post('purchase-history/email')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 3, ttl: 60 * 60_000 } })
+  @RequirePermissions('orders.view')
+  @ApiOperation({
+    summary: 'Email the customer a complete purchase-history statement',
+    description:
+      'Sends a summary to the authenticated customer registered email with a branded PDF, a CSV, or both. Attachments contain every item from paid, partially refunded, or refunded orders in the optional date range. Pending and failed payments are excluded.',
+  })
+  @OkExample({
+    status: 'sent',
+    email: 'c***r@example.com',
+    orderCount: 12,
+    itemCount: 28,
+    format: 'pdf',
+    from: '2025-12-31T23:00:00.000Z',
+    to: '2026-11-21T22:59:59.999Z',
+  })
+  @StandardErrors()
+  emailPurchaseHistory(@CurrentUser('id') userId: number, @Body() dto: PurchaseHistoryEmailDto) {
+    return this.ordersService.emailPurchaseHistory(userId, dto);
   }
 
   @Get(':id/track')

@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 
 import type {
   IdentroCacAdvancedRequest,
@@ -38,12 +39,25 @@ export class IdentroService {
   private readonly apiKey: string;
   private readonly apiKeyHeader: string;
   private readonly autoApproveOnMatch: boolean;
+  private readonly mockEnabled: boolean;
 
   constructor(private readonly config: ConfigService) {
-    this.baseUrl = this.config.getOrThrow<string>('IDENTRO_BASE_URL');
-    this.apiKey = this.config.getOrThrow<string>('IDENTRO_API_KEY');
+    this.mockEnabled = this.config.get<string>('IDENTRO_MOCK_ENABLED') === 'true';
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
+    const productionAcknowledged =
+      this.config.get<string>('IDENTRO_MOCK_ALLOW_PRODUCTION') === 'true';
+    if (this.mockEnabled && isProduction && !productionAcknowledged) {
+      throw new Error(
+        'IDENTRO_MOCK_ENABLED cannot be used in production unless IDENTRO_MOCK_ALLOW_PRODUCTION=true is explicitly set.',
+      );
+    }
+    this.baseUrl = this.config.get<string>('IDENTRO_BASE_URL') ?? 'https://api.identro.ng';
+    this.apiKey = this.config.get<string>('IDENTRO_API_KEY') ?? '';
+    if (!this.mockEnabled && !this.apiKey) throw new Error('IDENTRO_API_KEY is required.');
     this.apiKeyHeader = this.config.get<string>('IDENTRO_API_KEY_HEADER') ?? 'x-api-key';
     this.autoApproveOnMatch = this.config.get<string>('IDENTRO_AUTO_APPROVE_ON_MATCH') === 'true';
+    if (this.mockEnabled)
+      this.logger.warn('Identro mock mode is enabled; no provider calls will be made.');
   }
 
   get shouldAutoApprove(): boolean {
@@ -296,6 +310,7 @@ export class IdentroService {
   }
 
   private async post<T>(path: string, body: unknown): Promise<T> {
+    if (this.mockEnabled) return this.mockResponse(path, body) as T;
     const response = await fetch(`${this.baseUrl}${path}`, {
       method: 'POST',
       headers: {
@@ -323,6 +338,7 @@ export class IdentroService {
   }
 
   private async get<T>(path: string): Promise<T> {
+    if (this.mockEnabled) return this.mockResponse(path) as T;
     const response = await fetch(`${this.baseUrl}${path}`, {
       headers: {
         [this.apiKeyHeader]: this.apiKey,
@@ -371,5 +387,87 @@ export class IdentroService {
       throw new ServiceUnavailableException('Identro rate limit reached. Please retry shortly.');
     }
     throw new BadGatewayException(`Identro verification service failed (${status}).`);
+  }
+
+  private mockResponse(path: string, body?: unknown): Record<string, unknown> {
+    const reference = `MOCK-${randomUUID()}`;
+    const request = this.record(body);
+    if (path.endsWith('/face/liveness/sessions')) {
+      return {
+        success: true,
+        data: {
+          sessionId: reference,
+          reference,
+          sdkToken: `mock-sdk-${randomUUID()}`,
+          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+          mock: true,
+        },
+      };
+    }
+    if (path.includes('/face/liveness/sessions/') && path.endsWith('/credentials')) {
+      return { success: true, data: { reference: this.referenceFromPath(path), mock: true } };
+    }
+    if (path.includes('/face/liveness/sessions/') && path.endsWith('/complete')) {
+      return {
+        success: true,
+        data: {
+          reference: this.referenceFromPath(path),
+          status: 'COMPLETED',
+          liveness: { passed: true, decision: 'PASSED', score: 1, threshold: 0.8 },
+          mock: true,
+        },
+      };
+    }
+    if (path === '/merchant-api/driver-license/requests' && body === undefined) {
+      return { success: true, data: [], mock: true };
+    }
+    if (path.includes('/merchant-api/driver-license/requests/') && body === undefined) {
+      return {
+        success: true,
+        data: { reference: this.referenceFromPath(path), status: 'COMPLETED', mock: true },
+      };
+    }
+    if (path.includes('/cac/name-search')) {
+      return { success: true, data: { names: [], status: 'COMPLETED', mock: true } };
+    }
+    if (path.includes('/cac/basic')) {
+      return {
+        success: true,
+        data: {
+          reference,
+          status: 'COMPLETED',
+          companyName: 'Mock Verified Company',
+          companyType: request?.companyType ?? 'COMPANY',
+          mock: true,
+        },
+      };
+    }
+    if (path.includes('/cac/advance') || path.endsWith('/tin')) {
+      return { success: true, data: { reference, status: 'COMPLETED', mock: true } };
+    }
+    if (path.includes('/face/requests')) {
+      return {
+        success: true,
+        data: { reference, status: 'COMPLETED', faceMatchScore: 100, mock: true },
+      };
+    }
+    return {
+      success: true,
+      data: {
+        reference,
+        status: 'COMPLETED',
+        firstName: request?.firstname ?? 'Test',
+        lastName: request?.lastname ?? 'User',
+        mock: true,
+      },
+    };
+  }
+
+  private referenceFromPath(path: string): string {
+    const parts = path.split('/').filter(Boolean);
+    const tail = parts.at(-1);
+    return decodeURIComponent(
+      tail === 'complete' || tail === 'credentials' ? parts.at(-2)! : tail!,
+    );
   }
 }

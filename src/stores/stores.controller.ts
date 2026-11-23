@@ -25,6 +25,7 @@ import {
   STORE_SETTINGS_EXAMPLE,
 } from '../common/docs-examples';
 import { PaginationDto } from '../common/dto/pagination.dto';
+import { UpdateStoreOperatingHoursDto } from './dto/store-operating-hours.dto';
 
 @ApiTags('Stores')
 @Controller('stores')
@@ -162,6 +163,34 @@ export class StoresController {
   @OkExample(STORE_SETTINGS_EXAMPLE, 'Store settings')
   settings(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
     return this.storesService.settings(userId, storeId);
+  }
+
+  @Get(':id/operating-hours')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.view')
+  @ApiOperation({ summary: 'Vendor/store agent: get store operating hours and live availability' })
+  @OkExample({
+    timezone: 'Africa/Lagos',
+    temporarilyClosedUntil: null,
+    availability: { isOpen: true, reason: 'OPEN', nextOpenAt: null },
+    hours: [{ dayOfWeek: 1, opensAt: '08:00', closesAt: '20:00', isClosed: false }],
+  })
+  @StandardErrors()
+  operatingHours(@CurrentUser('id') userId: number, @Param('id', ParseIntPipe) storeId: number) {
+    return this.storesService.operatingHours(userId, storeId);
+  }
+
+  @Patch(':id/operating-hours')
+  @ApiCookieAuth('purse_access_token')
+  @RequirePermissions('stores.update')
+  @ApiOperation({ summary: 'Vendor: replace store operating hours or temporarily close the store' })
+  @StandardErrors()
+  updateOperatingHours(
+    @CurrentUser('id') userId: number,
+    @Param('id', ParseIntPipe) storeId: number,
+    @Body() dto: UpdateStoreOperatingHoursDto,
+  ) {
+    return this.storesService.updateOperatingHours(userId, storeId, dto);
   }
 
   @Patch(':id/settings')

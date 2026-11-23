@@ -28,17 +28,25 @@ export const formatNaira = (value: unknown): string => {
   return '&#8358;' + num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 };
 
-export const statusBadge = (label: string, color = '#f97316'): string =>
+export const statusBadge = (label: string, color = '#FF1B25'): string =>
   `<span style="display:inline-block;padding:4px 14px;border-radius:20px;background:${color};color:#fff;font-size:13px;font-weight:700;letter-spacing:.5px;">${escapeHtml(label)}</span>`;
 
-const BRAND_ORANGE = '#f97316';
-const BRAND_DARK   = '#7c2d12';
-const BG_LIGHT     = '#fff7ed';
-const TEXT_MAIN    = '#1c1917';
-const TEXT_MUTED   = '#78716c';
-const BORDER       = '#fed7aa';
+const BRAND_RED = '#FF1B25';
+const BRAND_ORANGE = '#FF7414';
+const BRAND_GOLD = '#FFB900';
+const BRAND_INK = '#171414';
+const BG_LIGHT = '#FFF8EE';
+const TEXT_MAIN = BRAND_INK;
+const TEXT_MUTED = '#6B625F';
+const BORDER = '#F2DFCA';
+const SUPPORT_EMAIL_SOURCE =
+  process.env.RECEIPT_SUPPORT_EMAIL ?? process.env.MAIL_FROM ?? 'support@superstore.com';
+const SUPPORT_EMAIL = SUPPORT_EMAIL_SOURCE.match(/<([^>]+)>/)?.[1] ?? SUPPORT_EMAIL_SOURCE;
+const BRAND_LOGO_URL =
+  process.env.BRAND_LOGO_URL ??
+  'https://res.cloudinary.com/di8higqd1/image/upload/ohoo/branding/email-logo.png';
 
-export const layout = (title: string, body: string, appName = 'Superstore'): string => `
+export const layout = (title: string, body: string, appName = 'OhoO!'): string => `
 <!doctype html>
 <html lang="en">
 <head>
@@ -56,34 +64,26 @@ export const layout = (title: string, body: string, appName = 'Superstore'): str
 
         <!-- Card -->
         <table width="100%" cellpadding="0" cellspacing="0" role="presentation"
-               style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(249,115,22,.10);">
+               style="max-width:600px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 4px 24px rgba(23,20,20,.08);">
 
           <!-- ── Header ── -->
           <tr>
-            <td style="background:linear-gradient(135deg,${BRAND_ORANGE} 0%,${BRAND_DARK} 100%);padding:0;">
+            <td style="background:${BG_LIGHT};padding:0;border-top:5px solid ${BRAND_RED};">
               <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
                 <tr>
                   <td style="padding:28px 36px;">
                     <!-- Logo wordmark -->
                     <table cellpadding="0" cellspacing="0" role="presentation">
                       <tr>
-                        <td style="background:#fff;border-radius:8px;padding:6px 14px;">
-                          <span style="font-size:20px;font-weight:800;color:${BRAND_ORANGE};letter-spacing:-0.5px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-                            ${escapeHtml(appName)}
-                          </span>
-                        </td>
-                        <td style="padding-left:12px;">
-                          <span style="font-size:12px;color:rgba(255,255,255,.75);font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-                            Official Communication
-                          </span>
+                        <td style="padding:4px 0;">
+                          <img src="${escapeHtml(BRAND_LOGO_URL)}" width="148" alt="${escapeHtml(appName)}" style="display:block;width:148px;max-width:100%;height:auto;border:0;">
                         </td>
                       </tr>
                     </table>
                   </td>
                 </tr>
-                <!-- Orange accent bar -->
                 <tr>
-                  <td style="height:4px;background:rgba(255,255,255,.25);"></td>
+                  <td style="height:4px;background:linear-gradient(90deg,${BRAND_RED},${BRAND_ORANGE},${BRAND_GOLD});"></td>
                 </tr>
               </table>
             </td>
@@ -112,8 +112,8 @@ export const layout = (title: string, body: string, appName = 'Superstore'): str
                 <tr>
                   <td style="text-align:center;">
                     <p style="margin:0 0 6px;font-size:13px;color:${TEXT_MUTED};">
-                      This email was sent by <strong style="color:${BRAND_ORANGE};">${escapeHtml(appName)}</strong>. If you have questions, contact
-                      <a href="mailto:support@superstore.com" style="color:${BRAND_ORANGE};text-decoration:none;">support@superstore.com</a>
+                      This email was sent by <strong style="color:${BRAND_RED};">${escapeHtml(appName)}</strong>. If you have questions, contact
+                      <a href="mailto:${escapeHtml(SUPPORT_EMAIL)}" style="color:${BRAND_ORANGE};text-decoration:none;">${escapeHtml(SUPPORT_EMAIL)}</a>
                     </p>
                     <p style="margin:0;font-size:12px;color:${TEXT_MUTED};">
                       &copy; ${new Date().getFullYear()} ${escapeHtml(appName)}. All rights reserved.
@@ -137,18 +137,18 @@ export const layout = (title: string, body: string, appName = 'Superstore'): str
 </html>`;
 
 export const infoBox = (content: string): string =>
-  `<div style="background:${BG_LIGHT};border-left:4px solid ${BRAND_ORANGE};border-radius:0 8px 8px 0;padding:16px 20px;margin:20px 0;font-size:15px;line-height:1.6;">${content}</div>`;
+  `<div style="background:${BG_LIGHT};border-radius:8px;padding:16px 20px;margin:20px 0;font-size:15px;line-height:1.6;">${content}</div>`;
 
 export const summaryRow = (label: string, value: string, bold = false): string =>
   `<tr>
     <td style="padding:10px 0;font-size:14px;color:#78716c;border-bottom:1px solid #fde8d0;width:45%;">${escapeHtml(label)}</td>
-    <td style="padding:10px 0;font-size:14px;color:#1c1917;border-bottom:1px solid #fde8d0;text-align:right;${bold ? 'font-weight:700;font-size:16px;color:#f97316;' : ''}">${value}</td>
+    <td style="padding:10px 0;font-size:14px;color:${BRAND_INK};border-bottom:1px solid ${BORDER};text-align:right;${bold ? `font-weight:700;font-size:16px;color:${BRAND_RED};` : ''}">${value}</td>
   </tr>`;
 
 export const ctaButton = (text: string, href: string): string =>
   `<table cellpadding="0" cellspacing="0" role="presentation" style="margin:28px 0;">
     <tr>
-      <td style="background:linear-gradient(135deg,#f97316,#7c2d12);border-radius:10px;">
+      <td style="background:linear-gradient(135deg,${BRAND_RED},${BRAND_ORANGE});border-radius:10px;">
         <a href="${href}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:700;color:#fff;text-decoration:none;font-family:'Segoe UI',Helvetica,Arial,sans-serif;letter-spacing:.3px;">${escapeHtml(text)}</a>
       </td>
     </tr>

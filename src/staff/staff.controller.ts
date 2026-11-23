@@ -15,20 +15,20 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiCookieAuth,
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 
 import { OkExample, StandardErrors } from '../common/api-docs';
+import { RequirePermissions } from '../common/permissions.decorator';
 import { Public } from '../auth/public.decorator';
 import { StaffJwtGuard, AuthenticatedStaff } from './staff-jwt.guard';
+import { StaffPermissionGuard } from './staff-permission.guard';
 import { AdminRoute } from '../auth/admin-route.decorator';
-import { StaffService } from './staff.service';
+import {
+  listStaffPermissionDefinitions,
+  listStaffRoleDefinitions,
+  StaffService,
+} from './staff.service';
 import {
   CreateStaffUserDto,
   StaffChangePasswordDto,
@@ -42,6 +42,42 @@ const CurrentStaff = createParamDecorator(
     return property ? req.staffUser?.[property] : req.staffUser;
   },
 );
+
+@ApiTags('Admin Access Control')
+@ApiCookieAuth('purse_staff_token')
+@Controller('admin')
+@AdminRoute()
+@UseGuards(StaffJwtGuard, StaffPermissionGuard)
+export class StaffAccessController {
+  @Get('roles')
+  @RequirePermissions('roles.assign')
+  @ApiOperation({ summary: 'List staff/admin roles and their effective permissions' })
+  @OkExample([
+    {
+      name: 'OPERATIONS_ADMIN',
+      permissions: ['users.view', 'stores.view', 'orders.view', 'roles.assign'],
+    },
+    { name: 'SUPER_ADMIN', permissions: ['admin.*'] },
+  ])
+  @StandardErrors()
+  roles() {
+    return listStaffRoleDefinitions();
+  }
+
+  @Get('permissions')
+  @RequirePermissions('roles.assign')
+  @ApiOperation({ summary: 'List staff/admin permission keys and the roles using each key' })
+  @OkExample([
+    {
+      key: 'orders.view',
+      roles: ['OPERATIONS_ADMIN', 'FINANCE_ADMIN', 'CUSTOMER_SUPPORT_ADMIN'],
+    },
+  ])
+  @StandardErrors()
+  permissions() {
+    return listStaffPermissionDefinitions();
+  }
+}
 
 @ApiTags('Admin Auth')
 @Controller('admin/auth')
@@ -63,17 +99,13 @@ export class StaffAuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.staffService.login(
-      dto,
-      req.ip,
-      req.headers['user-agent'],
-    );
+    const result = await this.staffService.login(dto, req.ip, req.headers['user-agent']);
 
     res.cookie('purse_staff_token', result.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 15 * 60 * 1000, 
+      maxAge: 15 * 60 * 1000,
     });
 
     const { accessToken: _, ...safeResult } = result;
@@ -115,10 +147,7 @@ export class StaffAuthController {
   @ApiOperation({ summary: 'Change staff password (required on first login)' })
   @OkExample({ passwordChanged: true })
   @StandardErrors()
-  changePassword(
-    @CurrentStaff('id') staffId: number,
-    @Body() dto: StaffChangePasswordDto,
-  ) {
+  changePassword(@CurrentStaff('id') staffId: number, @Body() dto: StaffChangePasswordDto) {
     return this.staffService.changePassword(staffId, dto);
   }
 }
@@ -140,10 +169,7 @@ export class StaffController {
     temporaryPassword: 'Xy@12bZq7P3!',
   })
   @StandardErrors()
-  create(
-    @Body() dto: CreateStaffUserDto,
-    @CurrentStaff() actor: AuthenticatedStaff,
-  ) {
+  create(@Body() dto: CreateStaffUserDto, @CurrentStaff() actor: AuthenticatedStaff) {
     this.assertSuperAdmin(actor);
     return this.staffService.create(dto, actor.id);
   }
@@ -171,10 +197,7 @@ export class StaffController {
   @ApiParam({ name: 'id', example: 2 })
   @OkExample({ id: 2, email: 'ops@purse.com', role: 'OPERATIONS_ADMIN', status: 'ACTIVE' })
   @StandardErrors()
-  findOne(
-    @Param('id', ParseIntPipe) id: number,
-    @CurrentStaff() actor: AuthenticatedStaff,
-  ) {
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentStaff() actor: AuthenticatedStaff) {
     this.assertSuperAdmin(actor);
     return this.staffService.findOne(id);
   }
@@ -198,10 +221,7 @@ export class StaffController {
   @ApiParam({ name: 'id', example: 2 })
   @OkExample({ id: 2, status: 'INACTIVE', deactivated: true })
   @StandardErrors()
-  deactivate(
-    @Param('id', ParseIntPipe) id: number,
-    @CurrentStaff() actor: AuthenticatedStaff,
-  ) {
+  deactivate(@Param('id', ParseIntPipe) id: number, @CurrentStaff() actor: AuthenticatedStaff) {
     this.assertSuperAdmin(actor);
     return this.staffService.deactivate(id, actor.id);
   }

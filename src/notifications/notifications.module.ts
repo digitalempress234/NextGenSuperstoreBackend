@@ -8,10 +8,11 @@ import { JwtModule } from '@nestjs/jwt';
 import { NotificationsGateway } from './notifications.gateway';
 import { PushNotificationsService } from './push-notifications.service';
 import { PushCampaignsService } from './push-campaigns.service';
+import { ReceiptsModule } from '../receipts/receipts.module';
 
 @Global()
 @Module({
-  imports: [MailModule, JwtModule.register({})],
+  imports: [MailModule, JwtModule.register({}), ReceiptsModule],
   controllers: [NotificationsController],
   providers: [
     NotificationsService,

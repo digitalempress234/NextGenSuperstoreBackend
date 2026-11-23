@@ -17,6 +17,18 @@ export interface EndpointCase {
 export const endpointCases: EndpointCase[] = [
   {
     module: 'admin',
+    method: 'get',
+    path: '/admin/roles',
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'admin',
+    method: 'get',
+    path: '/admin/permissions',
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'admin',
     method: 'post',
     path: '/admin/push-campaigns',
     body: {},
@@ -450,6 +462,20 @@ export const endpointCases: EndpointCase[] = [
   { module: 'catalog', method: 'delete', path: '/catalog/products/1', expectedWithoutAuth: 401 },
 
   { module: 'checkout', method: 'post', path: '/checkout', body: {}, expectedWithoutAuth: 401 },
+  {
+    module: 'checkout',
+    method: 'post',
+    path: '/checkout/buy-now/review',
+    body: {},
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'checkout',
+    method: 'post',
+    path: '/checkout/buy-now',
+    body: {},
+    expectedWithoutAuth: 401,
+  },
 
   { module: 'delivery', method: 'get', path: '/deliveries/overview', expectedWithoutAuth: 401 },
   { module: 'delivery', method: 'get', path: '/deliveries/mine', expectedWithoutAuth: 401 },
@@ -690,6 +716,19 @@ export const endpointCases: EndpointCase[] = [
   { module: 'stores', method: 'patch', path: '/stores/1', body: {}, expectedWithoutAuth: 401 },
   {
     module: 'stores',
+    method: 'get',
+    path: '/stores/1/operating-hours',
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'stores',
+    method: 'patch',
+    path: '/stores/1/operating-hours',
+    body: {},
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'stores',
     method: 'post',
     path: '/stores/1/products',
     body: {},
@@ -787,6 +826,13 @@ export const endpointCases: EndpointCase[] = [
     module: 'marketplace',
     method: 'delete',
     path: '/marketplace/wishlist/1',
+    expectedWithoutAuth: 401,
+  },
+  {
+    module: 'marketplace',
+    method: 'post',
+    path: '/marketplace/wishlist/1/move-to-cart',
+    body: {},
     expectedWithoutAuth: 401,
   },
   {

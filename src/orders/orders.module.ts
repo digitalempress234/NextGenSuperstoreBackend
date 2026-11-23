@@ -7,11 +7,12 @@ import { DeliveryModule } from '../delivery/delivery.module';
 
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { PurchaseHistoryPdfService } from './purchase-history-pdf.service';
 
 @Module({
   imports: [CheckoutModule, CartModule, RewardsModule, PaymentsModule, DeliveryModule],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  providers: [OrdersService, PurchaseHistoryPdfService],
   exports: [OrdersService],
 })
 export class OrdersModule {}

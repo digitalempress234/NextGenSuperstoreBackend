@@ -1,16 +1,26 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { CartService } from '../cart/cart.service';
+import { StoreAvailabilityService } from '../stores/store-availability.service';
+import { PublicPromotionListQueryDto } from '../promotions/dto/marketplace-promotion.dto';
+import { PromotionsService } from '../promotions/promotions.service';
 import {
   AddCompareDto,
   AddWishlistDto,
   BrowseMarketplaceDto,
+  MoveWishlistToCartDto,
   SearchStoresDto,
 } from './dto/marketplace.dto';
 
 @Injectable()
 export class MarketplaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cart?: CartService,
+    private readonly availability: StoreAvailabilityService = new StoreAvailabilityService(),
+    @Optional() private readonly promotionsService?: PromotionsService,
+  ) {}
 
   async scan(code: string) {
     const normalized = code?.trim().toUpperCase();
@@ -50,8 +60,11 @@ export class MarketplaceService {
   }
 
   async home() {
-    const [categories, stores, featuredProducts, popularProducts, discountedProducts] =
-      await this.prisma.$transaction([
+    const [
+      [categories, stores, featuredProducts, popularProducts, discountedProducts, rewardCampaigns],
+      promotions,
+    ] = await Promise.all([
+      this.prisma.$transaction([
         this.prisma.category.findMany({
           where: {
             isActive: true,
@@ -84,10 +97,17 @@ export class MarketplaceService {
             },
             latitude: true,
             longitude: true,
+            isActive: true,
+            timezone: true,
+            temporarilyClosedUntil: true,
+            operatingHours: true,
           },
         }),
         this.prisma.product.findMany({
-          where: { status: true },
+          where: {
+            status: true,
+            offers: { some: { isActive: true, availability: true, store: { isActive: true } } },
+          },
           include: {
             category: true,
             images: { orderBy: { sortOrder: 'asc' }, take: 3 },
@@ -95,6 +115,7 @@ export class MarketplaceService {
               where: {
                 isActive: true,
                 availability: true,
+                store: { isActive: true },
               },
               include: {
                 store: {
@@ -115,7 +136,10 @@ export class MarketplaceService {
           take: 12,
         }),
         this.prisma.product.findMany({
-          where: { status: true },
+          where: {
+            status: true,
+            offers: { some: { isActive: true, availability: true, store: { isActive: true } } },
+          },
           include: {
             category: true,
             images: { orderBy: { sortOrder: 'asc' }, take: 2 },
@@ -123,6 +147,7 @@ export class MarketplaceService {
               where: {
                 isActive: true,
                 availability: true,
+                store: { isActive: true },
               },
               include: {
                 store: {
@@ -149,6 +174,7 @@ export class MarketplaceService {
                 isActive: true,
                 availability: true,
                 discountPrice: { not: null },
+                store: { isActive: true },
               },
             },
           },
@@ -160,6 +186,7 @@ export class MarketplaceService {
                 isActive: true,
                 availability: true,
                 discountPrice: { not: null },
+                store: { isActive: true },
               },
               include: {
                 store: {
@@ -178,29 +205,87 @@ export class MarketplaceService {
           orderBy: { createdAt: 'desc' },
           take: 12,
         }),
-      ]);
+        this.prisma.rewardVoucher.findMany({
+          where: {
+            storeId: { not: null },
+            isActive: true,
+            startsAt: { lte: new Date() },
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            store: { isActive: true },
+          },
+          include: {
+            store: {
+              select: {
+                id: true,
+                storeName: true,
+                city: true,
+                state: true,
+                imageUrl: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 12,
+        }),
+      ]),
+      this.promotionsService ? this.promotionsService.publicHome(8) : Promise.resolve([]),
+    ]);
 
     return {
       categories,
-      stores,
+      stores: stores.map((store) => ({
+        ...store,
+        availability: this.availability.evaluate(store),
+      })),
       featuredProducts,
       popularProducts,
       discountedProducts,
+      promotions,
+      rewardCampaigns,
     };
+  }
+
+  promotions(query: PublicPromotionListQueryDto) {
+    return this.promotionsService!.publicList(query);
+  }
+
+  promotion(slug: string) {
+    return this.promotionsService!.publicGet(slug);
   }
 
   async browse(query: BrowseMarketplaceDto) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(15, Math.max(1, Number(query.limit) || 15));
     const skip = (page - 1) * limit;
+    if (
+      query.minPrice !== undefined &&
+      query.maxPrice !== undefined &&
+      query.minPrice > query.maxPrice
+    )
+      throw new BadRequestException('minPrice cannot be greater than maxPrice.');
 
     const priceFilter =
-      query.minPrice || query.maxPrice
+      query.minPrice !== undefined || query.maxPrice !== undefined
         ? {
-            ...(query.minPrice ? { gte: Number(query.minPrice) } : {}),
-            ...(query.maxPrice ? { lte: Number(query.maxPrice) } : {}),
+            ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
+            ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
           }
         : undefined;
+
+    const offerWhere = {
+      isActive: true,
+      availability: true,
+      store: { isActive: true },
+      ...(query.storeId ? { storeId: query.storeId } : {}),
+      ...(priceFilter
+        ? {
+            OR: [
+              { discountPrice: { not: null, ...priceFilter } },
+              { discountPrice: null, price: priceFilter },
+            ],
+          }
+        : {}),
+    };
 
     const where = {
       status: true,
@@ -215,66 +300,72 @@ export class MarketplaceService {
         : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       offers: {
-        some: {
-          isActive: true,
-          availability: true,
-          ...(query.storeId ? { storeId: query.storeId } : {}),
-          ...(priceFilter ? { price: priceFilter } : {}),
-        },
+        some: offerWhere,
       },
     };
 
-    const orderBy =
-      query.sort === 'newest' ? { createdAt: 'desc' as const } : { name: 'asc' as const };
-
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
-        where,
-        include: {
-          category: true,
-          images: { orderBy: { sortOrder: 'asc' } },
-          offers: {
-            where: {
-              isActive: true,
-              availability: true,
-              ...(query.storeId ? { storeId: query.storeId } : {}),
-              ...(priceFilter ? { price: priceFilter } : {}),
-            },
-            include: {
-              store: {
-                select: {
-                  id: true,
-                  storeName: true,
-                  state: true,
-                  city: true,
-                  imageUrl: true,
-                  latitude: true,
-                  longitude: true,
-                },
+    const candidates = await this.prisma.product.findMany({
+      where,
+      include: {
+        category: true,
+        images: { orderBy: { sortOrder: 'asc' } },
+        offers: {
+          where: offerWhere,
+          include: {
+            store: {
+              select: {
+                id: true,
+                storeName: true,
+                state: true,
+                city: true,
+                imageUrl: true,
+                latitude: true,
+                longitude: true,
+                isActive: true,
+                timezone: true,
+                temporarilyClosedUntil: true,
+                operatingHours: true,
               },
             },
-            orderBy: { price: 'asc' },
           },
         },
-        skip,
-        take: limit,
-        orderBy,
-      }),
-      this.prisma.product.count({ where }),
-    ]);
+      },
+    });
 
-    if (query.sort === 'price_desc' || query.sort === 'price_asc') {
-      items.sort((a, b) => {
-        const aPrice = Math.min(
-          ...a.offers.map((offer) => Number(offer.discountPrice ?? offer.price)),
-        );
-        const bPrice = Math.min(
-          ...b.offers.map((offer) => Number(offer.discountPrice ?? offer.price)),
-        );
-
-        return query.sort === 'price_asc' ? aPrice - bPrice : bPrice - aPrice;
-      });
-    }
+    const search = query.q?.trim().toLocaleLowerCase();
+    const effectivePrice = (product: (typeof candidates)[number]) =>
+      Math.min(...product.offers.map((offer) => Number(offer.discountPrice ?? offer.price)));
+    candidates.sort((a, b) => {
+      if (query.sort === 'price_asc') return effectivePrice(a) - effectivePrice(b);
+      if (query.sort === 'price_desc') return effectivePrice(b) - effectivePrice(a);
+      if (query.sort === 'newest') return b.createdAt.getTime() - a.createdAt.getTime();
+      if (search) {
+        const rank = (item: typeof a) => {
+          const name = item.name.toLocaleLowerCase();
+          if (name === search) return 0;
+          if (name.startsWith(search)) return 1;
+          if (name.includes(search)) return 2;
+          if (item.brand?.toLocaleLowerCase().includes(search)) return 3;
+          return 4;
+        };
+        const difference = rank(a) - rank(b);
+        if (difference) return difference;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    const total = candidates.length;
+    const items = candidates.slice(skip, skip + limit).map((product) => ({
+      ...product,
+      offers: product.offers
+        .sort((a, b) => Number(a.discountPrice ?? a.price) - Number(b.discountPrice ?? b.price))
+        .map((offer) => ({
+          ...offer,
+          store: {
+            ...offer.store,
+            availability: this.availability.evaluate(offer.store),
+          },
+        })),
+    }));
 
     return {
       items,
@@ -305,6 +396,7 @@ export class MarketplaceService {
           where: {
             isActive: true,
             availability: true,
+            store: { isActive: true },
           },
           include: {
             store: {
@@ -373,6 +465,7 @@ export class MarketplaceService {
         include: {
           category: true,
           images: { orderBy: { sortOrder: 'asc' } },
+          operatingHours: { orderBy: { dayOfWeek: 'asc' } },
           _count: {
             select: {
               products: true,
@@ -386,7 +479,10 @@ export class MarketplaceService {
     ]);
 
     return {
-      items,
+      items: items.map((store) => ({
+        ...store,
+        availability: this.availability.evaluate(store),
+      })),
       pagination: {
         page,
         limit,
@@ -405,6 +501,7 @@ export class MarketplaceService {
       include: {
         category: true,
         images: { orderBy: { sortOrder: 'asc' } },
+        operatingHours: { orderBy: { dayOfWeek: 'asc' } },
         products: {
           where: {
             isActive: true,
@@ -431,7 +528,7 @@ export class MarketplaceService {
       throw new NotFoundException('Store not found.');
     }
 
-    return store;
+    return { ...store, availability: this.availability.evaluate(store) };
   }
 
   async compare(productId: number) {
@@ -481,6 +578,7 @@ export class MarketplaceService {
               where: {
                 isActive: true,
                 availability: true,
+                store: { isActive: true },
               },
               include: {
                 store: {
@@ -513,6 +611,28 @@ export class MarketplaceService {
       removed: true,
       productId,
     };
+  }
+
+  async moveWishlistToCart(userId: number, productId: number, dto: MoveWishlistToCartDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const wishlistItem = await tx.wishlistItem.findUnique({
+        where: { userId_productId: { userId, productId } },
+      });
+      if (!wishlistItem) throw new NotFoundException('Wishlist item not found.');
+      const offer = await tx.storeProduct.findFirst({
+        where: { id: dto.storeProductId, productId },
+      });
+      if (!offer) throw new BadRequestException('The selected offer does not match this product.');
+      if (!this.cart) throw new Error('CartService is unavailable.');
+      const cart = await this.cart.lock(tx, userId);
+      await this.cart.addInTransaction(tx, cart.id, offer.id, dto.quantity);
+      await tx.wishlistItem.delete({ where: { id: wishlistItem.id } });
+      return {
+        moved: true,
+        productId,
+        cart: await this.cart.recalculate(tx, cart.id),
+      };
+    });
   }
 
   async addCompare(userId: number, dto: AddCompareDto) {
@@ -574,6 +694,7 @@ export class MarketplaceService {
                   where: {
                     isActive: true,
                     availability: true,
+                    store: { isActive: true },
                   },
                   include: {
                     store: {

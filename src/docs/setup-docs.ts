@@ -33,6 +33,9 @@ import { ReferralsModule } from '../referrals/referrals.module';
 import { ChatsModule } from '../chats/chats.module';
 import { SupportModule } from '../support/support.module';
 import { ScanningModule } from '../scanning/scanning.module';
+import { ReceiptsModule } from '../receipts/receipts.module';
+import { PromotionsModule } from '../promotions/promotions.module';
+import { ProductImportsModule } from '../product-imports/product-imports.module';
 
 function addNativeBearerAlternative(document: OpenAPIObject) {
   for (const path of Object.values(document.paths)) {
@@ -52,9 +55,11 @@ function addNativeBearerAlternative(document: OpenAPIObject) {
 
 export function setupScalarDocs(app: INestApplication) {
   const serverUrl = process.env.BASE_URL ?? '/';
+  const serverBase = serverUrl === '/' ? '' : serverUrl.replace(/\/$/, '');
+  const logoUrl = `${serverBase}/purse/v1/branding/logo.png`;
 
   const baseConfig = new DocumentBuilder()
-    .setTitle('Purse Superstore API')
+    .setTitle('OhoO! Superstore API')
     .setVersion('1.0.0')
     .addServer(serverUrl, process.env.NODE_ENV === 'production' ? 'Production' : 'Local')
 
@@ -91,7 +96,7 @@ export function setupScalarDocs(app: INestApplication) {
   const adminConfig = baseConfig
     .setDescription(
       'API for System Administrators and Back-Office Staff. ' +
-        'Uses the purse_staff_token cookie. Motorcycle rider KYC combines automatic identity, liveness, and driver-licence checks with manual motorcycle photo/plate and registration review. Staff can review items separately or use the audited atomic rider decision endpoint; automatic failures cannot be overridden by bulk approval. SUPER_ADMIN directory endpoints include paginated customers, orders, payouts, stores, riders, vendors, and campaigns with their detail pages. Audited advertising push campaigns support drafts, test sends, audience and location targeting, immediate or scheduled delivery, cancellation, delivery totals, customer MARKETING opt-out preferences, and approval or rejection of vendor-created store campaigns. Other staff access remains role-scoped.',
+        'Uses the purse_staff_token cookie. Motorcycle rider KYC combines automatic identity, liveness, and driver-licence checks with manual motorcycle photo/plate and registration review. Staff can review items separately or use the audited atomic rider decision endpoint; automatic failures cannot be overridden by bulk approval. SUPER_ADMIN directory endpoints include paginated customers, orders, payouts, stores, riders, vendors, campaigns, and OhoO! payment receipts with detail pages, receipt-email resend, and an audited switch for PDF receipt attachments (enabled by default). Audited advertising push campaigns support drafts, test sends, audience and location targeting, immediate or scheduled delivery, cancellation, delivery totals, and approval or rejection of vendor-created store campaigns. Admin-reviewed vendor marketplace promotions provide visual sale posts on the public marketplace homepage. Product imports accept the branded OhoO .xlsx template, stage and validate up to 1,000 rows per sheet, and support atomic commit plus approval of vendor-submitted new catalogue products. Other staff access remains role-scoped.',
     )
     .build();
   const adminDocument = SwaggerModule.createDocument(app, adminConfig, {
@@ -118,24 +123,40 @@ export function setupScalarDocs(app: INestApplication) {
       ChatsModule,
       SupportModule,
       ScanningModule,
+      ReceiptsModule,
+      PromotionsModule,
+      ProductImportsModule,
     ],
   });
   addNativeBearerAlternative(adminDocument);
+  for (const path of Object.keys(adminDocument.paths)) {
+    const receiptPath = path.includes('/receipts') || path.endsWith('/receipt');
+    if (receiptPath && !path.includes('/admin/receipts')) delete adminDocument.paths[path];
+    if (path.includes('/stores/') && path.includes('/promotions')) {
+      delete adminDocument.paths[path];
+    }
+    if (path.includes('/stores/') && path.includes('/product-imports')) {
+      delete adminDocument.paths[path];
+    }
+  }
   app.use(
     '/docs/admin',
     apiReference({
       content: adminDocument,
       theme: 'kepler',
       layout: 'modern',
+      favicon: logoUrl,
     }),
   );
   SwaggerModule.setup('swagger/admin', app, adminDocument, {
+    customfavIcon: logoUrl,
+    customSiteTitle: 'OhoO! Admin API',
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
   const storeConfig = baseConfig
     .setDescription(
-      'API for VENDOR and STORE_AGENT roles using purse_access_token. Includes store orders, campaigns, inbox, serving riders, competitive-deal comparison, settings, catalogue operations, packing scans, handoff QR generation, fulfillment, wallets, and notifications. Approved store owners can create push campaigns for active customers who previously ordered from their store, test only on their own device, obtain administrator approval, then send immediately or schedule delivery. MARKETING opt-outs are honored and each store is limited to three campaign sends per day.',
+      'API for VENDOR and STORE_AGENT roles using purse_access_token. Includes store orders, store-scoped receipt allocations, reward campaigns, public marketplace promotional posts, inbox, serving riders, competitive-deal comparison, settings, catalogue operations, packing scans, handoff QR generation, fulfillment, wallets, and notifications. Approved vendors can download a live, store-specific OhoO Excel template, upload up to 1,000 rows per sheet, inspect validation errors, and atomically commit catalogue offers; new catalogue products are held for staff approval. Approved stores can submit visual scheduled sale posts with selected products for administrator approval. Approved store owners can also create push campaigns for active customers who previously ordered from their store, test only on their own device, obtain administrator approval, then send immediately or schedule delivery. MARKETING opt-outs are honored and each store is limited to three campaign sends per day.',
     )
     .build();
   const storeDocument = SwaggerModule.createDocument(app, storeConfig, {
@@ -149,6 +170,9 @@ export function setupScalarDocs(app: INestApplication) {
       ChatsModule,
       SupportModule,
       ScanningModule,
+      ReceiptsModule,
+      PromotionsModule,
+      ProductImportsModule,
     ],
   });
   addNativeBearerAlternative(storeDocument);
@@ -156,6 +180,11 @@ export function setupScalarDocs(app: INestApplication) {
   if (storeDocument.paths) {
     Object.keys(storeDocument.paths).forEach((path) => {
       if (path.includes('/admin/')) {
+        delete storeDocument.paths[path];
+      }
+
+      const receiptPath = path.includes('/receipts') || path.endsWith('/receipt');
+      if (receiptPath && !path.includes('/stores/')) {
         delete storeDocument.paths[path];
       }
 
@@ -173,9 +202,12 @@ export function setupScalarDocs(app: INestApplication) {
       content: storeDocument,
       theme: 'purple',
       layout: 'modern',
+      favicon: logoUrl,
     }),
   );
   SwaggerModule.setup('swagger/store', app, storeDocument, {
+    customfavIcon: logoUrl,
+    customSiteTitle: 'OhoO! Store API',
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
@@ -210,16 +242,19 @@ export function setupScalarDocs(app: INestApplication) {
       content: riderDocument,
       theme: 'saturn',
       layout: 'modern',
+      favicon: logoUrl,
     }),
   );
   SwaggerModule.setup('swagger/rider', app, riderDocument, {
+    customfavIcon: logoUrl,
+    customSiteTitle: 'OhoO! Rider API',
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
   const publicConfig = baseConfig
     .setDescription(
       'API for Customers and Public access. ' +
-        'Authenticated CUSTOMER routes use the purse_access_token HttpOnly cookie on web or a Bearer access token in native apps; public routes require neither. Includes passkeys, rotating refresh sessions, catalog and barcode lookup, rewards, referrals, cart, checkout, Klump provider-backed BNPL with signed webhooks and server-side verification, wallet deposit/withdrawal/ledger, asynchronous refunds, state-gated order QR display, orders/returns, store chat, support conversations, Socket.IO notifications, FCM push triggers for orders, payments, wallet funding, delivery, chat, support, rewards, and KYC, plus an independent MARKETING preference for advertising opt-out.',
+        'Authenticated CUSTOMER routes use the purse_access_token HttpOnly cookie on web or a Bearer access token in native apps; public routes require neither. The marketplace home includes active admin-approved visual sale promotions, active store reward/discount campaigns, product discounts, featured products, popular products, stores, and categories. Includes passkeys, rotating refresh sessions, catalog and barcode lookup, rewards, referrals, cart, checkout, Klump provider-backed BNPL with signed webhooks and server-side verification, wallet deposit/withdrawal/ledger, immutable OhoO! receipts with PDF download and refund status, customer-requested purchase-history emails with branded PDF and complete CSV options, asynchronous refunds, state-gated order QR display, orders/returns, store chat, support conversations, Socket.IO notifications, FCM push triggers for orders, payments, wallet funding, delivery, chat, support, rewards, and KYC, plus an independent MARKETING preference for advertising opt-out.',
     )
     .build();
   const publicDocument = SwaggerModule.createDocument(app, publicConfig, {
@@ -241,11 +276,18 @@ export function setupScalarDocs(app: INestApplication) {
       ChatsModule,
       SupportModule,
       ScanningModule,
+      ReceiptsModule,
     ],
   });
   addNativeBearerAlternative(publicDocument);
   for (const path of Object.keys(publicDocument.paths)) {
     if (path.includes('/admin/')) delete publicDocument.paths[path];
+    if (path.includes('/stores/') && path.includes('/receipts')) {
+      delete publicDocument.paths[path];
+    }
+    if (path.includes('/stores/') && path.includes('/promotions')) {
+      delete publicDocument.paths[path];
+    }
   }
   app.use(
     '/docs/public',
@@ -253,9 +295,12 @@ export function setupScalarDocs(app: INestApplication) {
       content: publicDocument,
       theme: 'moon',
       layout: 'modern',
+      favicon: logoUrl,
     }),
   );
   SwaggerModule.setup('swagger/public', app, publicDocument, {
+    customfavIcon: logoUrl,
+    customSiteTitle: 'OhoO! Public API',
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 
@@ -264,8 +309,13 @@ export function setupScalarDocs(app: INestApplication) {
     .build();
   const fullDocument = SwaggerModule.createDocument(app, fullConfig);
   addNativeBearerAlternative(fullDocument);
-  app.use('/docs', apiReference({ content: fullDocument, theme: 'moon', layout: 'modern' }));
+  app.use(
+    '/docs',
+    apiReference({ content: fullDocument, theme: 'moon', layout: 'modern', favicon: logoUrl }),
+  );
   SwaggerModule.setup('swagger', app, fullDocument, {
+    customfavIcon: logoUrl,
+    customSiteTitle: 'OhoO! API',
     swaggerOptions: { persistAuthorization: false, displayRequestDuration: true, filter: true },
   });
 }

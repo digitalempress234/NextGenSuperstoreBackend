@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
+import type { SendMailOptions, Transporter } from 'nodemailer';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { templates, type EmailTemplateData, type EmailTemplateKey } from './templates';
 import type { RenderedEmail } from './templates/_shared';
+
+export interface SendTemplateOptions {
+  attachments?: NonNullable<SendMailOptions['attachments']>;
+}
 
 @Injectable()
 export class MailService {
@@ -17,7 +21,7 @@ export class MailService {
     config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
-    this.appName = config.get<string>('APP_NAME', 'Purse');
+    this.appName = config.get<string>('APP_NAME', 'OhoO!');
     this.transporter = nodemailer.createTransport({
       host: config.getOrThrow<string>('SMTP_HOST'),
       port: Number(config.get<string>('SMTP_PORT', '587')),
@@ -35,6 +39,7 @@ export class MailService {
     data: EmailTemplateData,
     userId?: number,
     eventKey?: string,
+    options: SendTemplateOptions = {},
   ): Promise<void> {
     const templateFn = templates[templateKey] as (data: EmailTemplateData) => RenderedEmail;
     const rendered = templateFn({
@@ -68,14 +73,17 @@ export class MailService {
         });
 
     try {
-      const senderEmail = process.env.MAIL_FROM ?? process.env.SMTP_USER;
-      const from = `"Superstore" <${senderEmail}>`;
+      const configuredSender = (process.env.MAIL_FROM ?? process.env.SMTP_USER)?.trim();
+      const from = configuredSender?.includes('<')
+        ? configuredSender
+        : `"${this.appName}" <${configuredSender}>`;
       const result = await this.transporter.sendMail({
         from,
         to,
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
+        attachments: options.attachments,
       });
 
       await this.prisma.emailLog.update({

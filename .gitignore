@@ -9,7 +9,11 @@ coverage/
 prisma/*.db
 
 context/
-docs/
+doc/
+# docs/
 scripts/
 docker-compose.yml
 docker-compose.yaml
+
+MOBILE_FRONTEND_BACKEND_HANDOFF.md
+ADMIN_ROLES_PERMISSIONS_FRONTEND_GUIDE.md

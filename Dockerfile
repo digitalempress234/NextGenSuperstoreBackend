@@ -19,5 +19,6 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh
 EXPOSE 8084
 CMD ["./docker-entrypoint.sh"]

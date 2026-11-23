@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { CurrentUser } from '../common/current-user.decorator';
 import { RequirePermissions } from '../common/permissions.decorator';
 import { OkExample, StandardErrors } from '../common/api-docs';
-import { CreateCheckoutDto } from './dto/checkout.dto';
+import { BuyNowOrderDto, BuyNowReviewDto, CreateCheckoutDto } from './dto/checkout.dto';
 import { CheckoutService } from './checkout.service';
 
 @ApiTags('Checkout')
@@ -61,6 +61,43 @@ export class CheckoutController {
   @RequirePermissions('checkout.create')
   review(@CurrentUser('id') userId: number, @Body() dto: CreateCheckoutDto) {
     return this.checkoutService.quote(userId, dto);
+  }
+
+  @Post('buy-now/review')
+  @HttpCode(200)
+  @RequirePermissions('checkout.create')
+  @ApiOperation({
+    summary: 'Review one store offer without adding it to or replacing the current cart',
+  })
+  @OkExample({
+    mode: 'BUY_NOW',
+    cartId: 12,
+    currency: 'NGN',
+    subtotal: '450.00',
+    total: '1950.00',
+    orders: [{ storeId: 10, items: [{ storeProductId: 900, quantity: 1 }] }],
+  })
+  @StandardErrors()
+  buyNowReview(@CurrentUser('id') userId: number, @Body() dto: BuyNowReviewDto) {
+    const { storeProductId, quantity, ...input } = dto;
+    return this.checkoutService.buyNowQuote(userId, input, { storeProductId, quantity });
+  }
+
+  @Post('buy-now')
+  @RequirePermissions('checkout.create')
+  @ApiOperation({
+    summary: 'Buy one store offer immediately while preserving the existing cart',
+  })
+  @OkExample({
+    paymentGroupId: 20,
+    paymentStatus: 'pending',
+    paymentMethod: 'card',
+    orders: [{ id: 101, orderNumber: 'PUR-261114-A1B2C3D4' }],
+  })
+  @StandardErrors()
+  buyNow(@CurrentUser('id') userId: number, @Body() dto: BuyNowOrderDto) {
+    const { storeProductId, quantity, ...input } = dto;
+    return this.checkoutService.buyNowPlace(userId, input, { storeProductId, quantity });
   }
 
   @Get('pending')

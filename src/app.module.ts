@@ -40,6 +40,10 @@ import { ChatsModule } from './chats/chats.module';
 import { SupportModule } from './support/support.module';
 import { ScanningModule } from './scanning/scanning.module';
 import { ApiThrottlerGuard } from './common/api-throttler.guard';
+import { ReceiptsModule } from './receipts/receipts.module';
+import { BrandingModule } from './branding/branding.module';
+import { PromotionsModule } from './promotions/promotions.module';
+import { ProductImportsModule } from './product-imports/product-imports.module';
 
 @Module({
   imports: [
@@ -87,6 +91,10 @@ import { ApiThrottlerGuard } from './common/api-throttler.guard';
     ChatsModule,
     SupportModule,
     ScanningModule,
+    ReceiptsModule,
+    BrandingModule,
+    PromotionsModule,
+    ProductImportsModule,
   ],
   providers: [
     {

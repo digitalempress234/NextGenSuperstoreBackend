@@ -51,7 +51,7 @@ export class NotificationsController {
 
   @Patch('read-all')
   @ApiOperation({ summary: 'Mark all current user notifications as read' })
-  @OkExample({ success: true }, 'All notifications marked as read')
+  @OkExample({ updated: 4 }, 'Number of notifications marked as read')
   readAll(@CurrentUser('id') userId: number) {
     return this.notificationsService.readAll(userId);
   }

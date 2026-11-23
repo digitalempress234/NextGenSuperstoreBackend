@@ -20,7 +20,7 @@ import {
   UpdateStaffUserDto,
 } from './dto/staff.dto';
 
-const STAFF_PERMISSIONS: Record<StaffRole, string[]> = {
+export const STAFF_PERMISSIONS: Record<StaffRole, string[]> = {
   SUPER_ADMIN: ['admin.*'],
   OPERATIONS_ADMIN: [
     'users.view',
@@ -37,6 +37,7 @@ const STAFF_PERMISSIONS: Record<StaffRole, string[]> = {
     'roles.assign',
     'roles.revoke',
     'rewards.manage',
+    'promotions.review',
     'support.tickets.manage',
     'chats.moderate',
   ],
@@ -76,8 +77,10 @@ const STAFF_PERMISSIONS: Record<StaffRole, string[]> = {
     'products.view',
     'products.create',
     'products.update',
+    'products.bulk.import',
     'inventory.adjust',
     'orders.view',
+    'promotions.review',
   ],
   CUSTOMER_SUPPORT_ADMIN: [
     'users.view',
@@ -141,6 +144,24 @@ const STAFF_PERMISSIONS: Record<StaffRole, string[]> = {
 
 export function getStaffPermissions(role: StaffRole): string[] {
   return STAFF_PERMISSIONS[role] ?? [];
+}
+
+export function listStaffRoleDefinitions() {
+  return Object.values(StaffRole).map((name) => ({
+    name,
+    permissions: getStaffPermissions(name),
+  }));
+}
+
+export function listStaffPermissionDefinitions() {
+  const roles = Object.values(StaffRole);
+  const permissions = new Set(roles.flatMap((role) => getStaffPermissions(role)));
+  return [...permissions]
+    .sort((left, right) => left.localeCompare(right))
+    .map((key) => ({
+      key,
+      roles: roles.filter((role) => getStaffPermissions(role).includes(key)),
+    }));
 }
 
 @Injectable()

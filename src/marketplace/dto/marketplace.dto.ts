@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
 
 export class BrowseMarketplaceDto {
   @ApiPropertyOptional({
@@ -26,20 +26,26 @@ export class BrowseMarketplaceDto {
   storeId?: number;
 
   @ApiPropertyOptional({
-    example: '450',
-    description: 'Return offers with a minimum unit price.',
+    example: 450,
+    description:
+      'Return offers whose effective price (discount price when present) is at least this amount.',
   })
   @IsOptional()
-  @IsString()
-  minPrice?: string;
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  minPrice?: number;
 
   @ApiPropertyOptional({
-    example: '5000',
-    description: 'Return offers with a maximum unit price.',
+    example: 5000,
+    description:
+      'Return offers whose effective price (discount price when present) is at most this amount.',
   })
   @IsOptional()
-  @IsString()
-  maxPrice?: string;
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  maxPrice?: number;
 
   @ApiPropertyOptional({
     example: 'price_asc',
@@ -109,6 +115,19 @@ export class AddCompareDto {
   @IsInt()
   @IsPositive()
   productId!: number;
+}
+
+export class MoveWishlistToCartDto {
+  @ApiPropertyOptional({ example: 900, description: 'The exact store offer to add.' })
+  @IsInt()
+  @IsPositive()
+  storeProductId!: number;
+
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  quantity = 1;
 }
 
 export class UpdateCartItemDto {

@@ -8,9 +8,11 @@ import {
   AddCompareDto,
   AddWishlistDto,
   BrowseMarketplaceDto,
+  MoveWishlistToCartDto,
   SearchStoresDto,
 } from './dto/marketplace.dto';
 import { MarketplaceService } from './marketplace.service';
+import { PublicPromotionListQueryDto } from '../promotions/dto/marketplace-promotion.dto';
 
 @ApiTags('Marketplace')
 @Controller('marketplace')
@@ -37,10 +39,32 @@ export class MarketplaceController {
     featuredProducts: [],
     popularProducts: [],
     discountedProducts: [],
+    promotions: [],
+    rewardCampaigns: [],
   })
   @StandardErrors()
   home() {
     return this.marketplace.home();
+  }
+
+  @Public()
+  @Get('promotions')
+  @ApiOperation({
+    summary: 'List active marketplace promotional posts',
+    description:
+      'Returns only admin-approved promotions whose store is active and whose schedule is currently valid.',
+  })
+  @OkExample({ items: [], total: 0, page: 1, limit: 15, pages: 0 })
+  promotions(@Query() query: PublicPromotionListQueryDto) {
+    return this.marketplace.promotions(query);
+  }
+
+  @Public()
+  @Get('promotions/:slug')
+  @ApiOperation({ summary: 'Get one active marketplace promotional post by slug' })
+  @ApiParam({ name: 'slug', example: 'black-friday-mega-sale-a1b2c3d4' })
+  promotion(@Param('slug') slug: string) {
+    return this.marketplace.promotion(slug);
   }
 
   @Public()
@@ -278,6 +302,22 @@ export class MarketplaceController {
     @Param('productId', ParseIntPipe) productId: number,
   ) {
     return this.marketplace.removeWishlist(userId, productId);
+  }
+
+  @Post('wishlist/:productId/move-to-cart')
+  @ApiCookieAuth('purse_access_token')
+  @ApiOperation({
+    summary: 'Atomically add a wishlist product offer to the cart and remove it from the wishlist',
+  })
+  @ApiParam({ name: 'productId', example: 42 })
+  @OkExample({ moved: true, productId: 42, cart: { id: 12, totalItems: 1 } })
+  @StandardErrors()
+  moveWishlistToCart(
+    @CurrentUser('id') userId: number,
+    @Param('productId', ParseIntPipe) productId: number,
+    @Body() dto: MoveWishlistToCartDto,
+  ) {
+    return this.marketplace.moveWishlistToCart(userId, productId, dto);
   }
 
   @Get('compare-list')

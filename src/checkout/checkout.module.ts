@@ -12,9 +12,10 @@ import { CheckoutController } from './checkout.controller';
 import { CheckoutService } from './checkout.service';
 
 import { NotificationsModule } from '../notifications/notifications.module';
+import { StoresModule } from '../stores/stores.module';
 
 @Module({
-  imports: [NotificationsModule, CartModule, PaymentsModule, StaffModule],
+  imports: [NotificationsModule, CartModule, PaymentsModule, StaffModule, StoresModule],
   controllers: [CheckoutController, CheckoutSettingsController, PickupStationsController],
   providers: [CheckoutService, CheckoutSettingsService],
   exports: [CheckoutService, CheckoutSettingsService],

@@ -14,6 +14,7 @@ import { lowStockEmail } from './low-stock.template';
 import { staffWelcomeEmail } from './staff-welcome.template';
 import { welcomeEmail } from './welcome.template';
 import { riderApplicationDecisionEmail } from './rider-application-decision.template';
+import { purchaseHistoryEmail } from './purchase-history.template';
 
 export type { EmailTemplateData, RenderedEmail } from './_shared';
 
@@ -34,6 +35,7 @@ export const templates = {
   systemAnnouncement: systemAnnouncementEmail,
   welcome: welcomeEmail,
   riderApplicationDecision: riderApplicationDecisionEmail,
+  purchaseHistory: purchaseHistoryEmail,
 } as const;
 
 export type EmailTemplateKey = keyof typeof templates;

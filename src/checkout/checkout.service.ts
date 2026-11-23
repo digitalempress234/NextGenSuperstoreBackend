@@ -12,6 +12,9 @@ import { PaymentsService } from '../payments/payments.service';
 import { CheckoutSettingsService } from './checkout-settings.service';
 import { CreateCheckoutDto } from './dto/checkout.dto';
 import { money } from '../common/money';
+import { StoreAvailabilityService } from '../stores/store-availability.service';
+
+type DirectSelection = { storeProductId: number; quantity: number };
 
 export function jsonSnapshot(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -55,6 +58,7 @@ export class CheckoutService {
     private readonly cartService: CartService,
     private readonly settings: CheckoutSettingsService,
     private readonly payments: PaymentsService,
+    private readonly storeAvailability: StoreAvailabilityService = new StoreAvailabilityService(),
   ) {}
 
   async quote(userId: number, input: CreateCheckoutDto) {
@@ -64,7 +68,19 @@ export class CheckoutService {
     });
   }
 
-  async quoteInTransaction(tx: Prisma.TransactionClient, userId: number, input: CreateCheckoutDto) {
+  async buyNowQuote(userId: number, input: CreateCheckoutDto, selection: DirectSelection) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.cartService.lock(tx, userId);
+      return this.quoteInTransaction(tx, userId, input, selection);
+    });
+  }
+
+  async quoteInTransaction(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    input: CreateCheckoutDto,
+    selection?: DirectSelection,
+  ) {
     const fulfillmentType =
       input.fulfillmentType ??
       (input.deliveryMethod === 'home_delivery'
@@ -83,7 +99,7 @@ export class CheckoutService {
     const cart = await tx.cart.findUnique({ where: { userId }, include: cartInclude });
     if (!cart || (input.cartId !== undefined && cart.id !== input.cartId))
       throw new NotFoundException('Cart not found.');
-    if (!cart.items.length) throw new BadRequestException('Cart is empty.');
+    if (!selection && !cart.items.length) throw new BadRequestException('Cart is empty.');
     if (cart.currency !== 'NGN')
       throw new BadRequestException('Checkout currently supports NGN only.');
     const customer = await tx.user.findUniqueOrThrow({ where: { id: userId } });
@@ -131,7 +147,27 @@ export class CheckoutService {
     const settings = await this.settings.settings(tx);
     if (fulfillmentType === 'DELIVERY' && !settings.deliveryEnabled)
       throw new BadRequestException('Home delivery is not configured or is disabled.');
-    const unavailableItems = cart.items
+    const directOffer = selection
+      ? await tx.storeProduct.findUnique({
+          where: { id: selection.storeProductId },
+          include: {
+            product: { include: { images: true, category: true } },
+            store: true,
+          },
+        })
+      : null;
+    if (selection && !directOffer) throw new NotFoundException('Store product not found.');
+    const selectedItems = selection
+      ? [
+          {
+            id: null,
+            storeProductId: selection.storeProductId,
+            quantity: selection.quantity,
+            storeProduct: directOffer!,
+          },
+        ]
+      : cart.items;
+    const unavailableItems = selectedItems
       .filter(
         (item) =>
           !item.storeProduct.isActive ||
@@ -152,7 +188,7 @@ export class CheckoutService {
         message: 'Some items are unavailable',
         data: { unavailableItems },
       });
-    const items = cart.items.map((item) => {
+    const items = selectedItems.map((item) => {
       const unitPrice = money(item.storeProduct.discountPrice ?? item.storeProduct.price);
       return {
         cartItemId: item.id,
@@ -168,6 +204,7 @@ export class CheckoutService {
       };
     });
     const storeIds = [...new Set(items.map((item) => item.storeId))].sort((a, b) => a - b);
+    await this.storeAvailability.assertStoresOpen(tx, storeIds);
     const perStoreFee =
       fulfillmentType === 'DELIVERY' ? money(settings.deliveryFeePerStore) : money(0);
     let orders = storeIds.map((storeId) => {
@@ -186,7 +223,7 @@ export class CheckoutService {
     });
     const grossSubtotal = orders.reduce((sum, order) => sum.add(order.subtotal), money(0));
     let discountAmount = money(0);
-    const appliedVoucher = cart.voucher?.voucher;
+    const appliedVoucher = selection ? undefined : cart.voucher?.voucher;
     if (appliedVoucher) {
       const valid =
         appliedVoucher.isActive &&
@@ -205,7 +242,7 @@ export class CheckoutService {
         return { ...order, discountAmount: amount, total: order.total.sub(amount) };
       });
     }
-    const appliedCoupon = cart.coupon?.coupon;
+    const appliedCoupon = selection ? undefined : cart.coupon?.coupon;
     if (appliedCoupon) {
       const valid =
         appliedCoupon.isActive &&
@@ -253,6 +290,7 @@ export class CheckoutService {
     const subtotal = grossSubtotal;
     const shippingFee = perStoreFee.mul(storeIds.length);
     return {
+      mode: selection ? 'BUY_NOW' : 'CART',
       cartId: cart.id,
       currency: cart.currency,
       fulfillmentType,
@@ -288,21 +326,34 @@ export class CheckoutService {
     return this.payments.summary(userId, group.id);
   }
 
+  async buyNowPlace(userId: number, input: CreateCheckoutDto, selection: DirectSelection) {
+    const group = await this.prisma.$transaction(
+      (tx) => this.createInTransaction(tx, userId, input, undefined, selection),
+      { timeout: 15000 },
+    );
+    if (group.paymentMethod === 'CARD' || group.paymentMethod === 'BANK_TRANSFER')
+      await this.payments.initialize(userId, group.id);
+    if (group.status === 'PAID') await this.payments.dispatchGroupConfirmations([group.id]);
+    return this.payments.summary(userId, group.id);
+  }
+
   async createInTransaction(
     tx: Prisma.TransactionClient,
     userId: number,
     input: CreateCheckoutDto,
     credit?: { method: PaymentMethod; expectedFingerprint: string; applicationId: number },
+    selection?: DirectSelection,
   ) {
     const cart = await this.cartService.lock(tx, userId);
     if (input.cartId !== undefined && cart.id !== input.cartId)
       throw new NotFoundException('Cart not found.');
     const pending = await tx.checkoutPaymentGroup.findUnique({ where: { activeCartId: cart.id } });
     if (pending) {
-      const previous = pending.checkoutSnapshot as { input?: unknown } | null;
+      const previous = pending.checkoutSnapshot as { input?: unknown; selection?: unknown } | null;
       if (
         credit ||
-        quoteFingerprint(previous?.input ?? pending.checkoutSnapshot) !== quoteFingerprint(input)
+        quoteFingerprint({ input: previous?.input, selection: previous?.selection }) !==
+          quoteFingerprint({ input, selection })
       ) {
         throw new ConflictException({
           message:
@@ -312,7 +363,7 @@ export class CheckoutService {
       }
       return pending;
     }
-    const quote = await this.quoteInTransaction(tx, userId, input);
+    const quote = await this.quoteInTransaction(tx, userId, input, selection);
     if (credit && quoteFingerprint(quote) !== credit.expectedFingerprint)
       throw new ConflictException(
         'Cart, prices, or delivery details changed. Submit a new BNPL application.',
@@ -412,8 +463,10 @@ export class CheckoutService {
       data: {
         userId,
         activeCartId: cart.id,
-        cartSnapshot: jsonSnapshot(quote.orders.flatMap((order) => order.items)),
-        checkoutSnapshot: jsonSnapshot({ input, quote }),
+        cartSnapshot: selection
+          ? jsonSnapshot({ mode: 'BUY_NOW', items: quote.orders.flatMap((order) => order.items) })
+          : jsonSnapshot(quote.orders.flatMap((order) => order.items)),
+        checkoutSnapshot: jsonSnapshot({ input, selection, quote }),
         paymentMethod: method,
         totalAmount: quote.total,
         discountAmount: quote.discountAmount,

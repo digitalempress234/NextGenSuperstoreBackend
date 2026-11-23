@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { ReturnOrderDto } from './dto/order.dto';
 import { CartService } from '../cart/cart.service';
 import { ConflictException } from '@nestjs/common';
@@ -22,6 +23,41 @@ import {
   DELIVERY_SOCKET_PATH,
 } from '../delivery/delivery-websocket.contract';
 import { DeliveryService } from '../delivery/delivery.service';
+import { MailService } from '../mail/mail.service';
+import type { PurchaseHistoryEmailDto } from './dto/purchase-history-email.dto';
+import { PurchaseHistoryPdfService } from './purchase-history-pdf.service';
+
+const PURCHASE_HISTORY_PAYMENT_STATUSES: PaymentStatus[] = [
+  'PAID',
+  'PARTIALLY_REFUNDED',
+  'REFUNDED',
+];
+
+function csvCell(value: unknown) {
+  const raw = String(value ?? '');
+  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
+
+function statementDate(value: string, endOfDay = false) {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  return new Date(
+    dateOnly ? `${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}+01:00` : value,
+  );
+}
+
+function displayDate(value: Date) {
+  return new Intl.DateTimeFormat('en-NG', {
+    dateStyle: 'medium',
+    timeZone: 'Africa/Lagos',
+  }).format(value);
+}
+
+function maskEmail(email: string) {
+  const [local, domain] = email.split('@');
+  if (!domain) return email;
+  return `${local.slice(0, 1)}${'*'.repeat(Math.max(3, local.length - 2))}${local.length > 1 ? local.slice(-1) : ''}@${domain}`;
+}
 
 function screenStatus(status: OrderStatus) {
   if (status === 'ORDER_RECEIVED' || status === 'CONFIRMED') return 'pending';
@@ -39,6 +75,8 @@ export class OrdersService {
     private readonly cart: CartService,
     @Optional() private readonly payments?: PaymentsService,
     @Optional() private readonly deliveries?: DeliveryService,
+    @Optional() private readonly mail?: MailService,
+    @Optional() private readonly purchaseHistoryPdf?: PurchaseHistoryPdfService,
   ) {}
 
   mine(
@@ -90,6 +128,197 @@ export class OrdersService {
           firstItemImage: order.items[0]?.productImage ?? null,
         })),
       );
+  }
+
+  async emailPurchaseHistory(userId: number, dto: PurchaseHistoryEmailDto = {}) {
+    if (!this.mail) throw new ServiceUnavailableException('Email delivery is unavailable.');
+    const format = dto.format ?? 'csv';
+    if ((format === 'pdf' || format === 'both') && !this.purchaseHistoryPdf) {
+      throw new ServiceUnavailableException('Purchase-history PDF generation is unavailable.');
+    }
+
+    const from = dto.from ? statementDate(dto.from) : undefined;
+    const to = dto.to ? statementDate(dto.to, true) : undefined;
+    if (from && to && from > to) {
+      throw new BadRequestException(
+        'The purchase-history start date must not be after the end date.',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (!user) throw new NotFoundException('User not found.');
+
+    const orders = await this.prisma.order.findMany({
+      where: {
+        userId,
+        ...(from || to
+          ? {
+              placedAt: {
+                ...(from ? { gte: from } : {}),
+                ...(to ? { lte: to } : {}),
+              },
+            }
+          : {}),
+        allocations: {
+          some: { paymentGroup: { status: { in: PURCHASE_HISTORY_PAYMENT_STATUSES } } },
+        },
+      },
+      orderBy: { placedAt: 'desc' },
+      select: {
+        orderNumber: true,
+        placedAt: true,
+        currency: true,
+        total: true,
+        currentStatus: true,
+        store: { select: { storeName: true } },
+        items: {
+          select: {
+            productName: true,
+            productCode: true,
+            quantity: true,
+            unitPrice: true,
+            totalPrice: true,
+          },
+        },
+        allocations: {
+          take: 1,
+          select: {
+            paymentGroup: { select: { status: true, paymentMethod: true } },
+          },
+        },
+      },
+    });
+
+    const rows = [
+      [
+        'Order Number',
+        'Purchase Date',
+        'Store',
+        'Item',
+        'Product Code',
+        'Quantity',
+        'Unit Price',
+        'Item Total',
+        'Currency',
+        'Payment Method',
+        'Payment Status',
+        'Order Status',
+      ],
+      ...orders.flatMap((order) => {
+        const payment = order.allocations[0]?.paymentGroup;
+        const values = order.items.length ? order.items : [null];
+        return values.map((item) => [
+          order.orderNumber,
+          order.placedAt.toISOString(),
+          order.store.storeName,
+          item?.productName ?? '',
+          item?.productCode ?? '',
+          item?.quantity ?? 0,
+          item?.unitPrice?.toString() ?? '0.00',
+          item?.totalPrice?.toString() ?? '0.00',
+          order.currency,
+          payment?.paymentMethod ?? '',
+          payment?.status ?? '',
+          order.currentStatus,
+        ]);
+      }),
+    ];
+    const csv = rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
+    const itemCount = orders.reduce((count, order) => count + order.items.length, 0);
+    const totalValue = orders
+      .reduce((total, order) => total.plus(order.total), new Prisma.Decimal(0))
+      .toFixed(2);
+    const fromLabel = from ? displayDate(from) : 'All time';
+    const toLabel = to ? displayDate(to) : 'Present';
+    const statementItems = orders.flatMap((order) => {
+      const payment = order.allocations[0]?.paymentGroup;
+      return order.items.map((item) => ({
+        orderNumber: order.orderNumber,
+        purchasedAt: order.placedAt,
+        storeName: order.store.storeName,
+        productName: item.productName,
+        productCode: item.productCode,
+        quantity: item.quantity,
+        itemTotal: item.totalPrice.toString(),
+        currency: order.currency,
+        paymentStatus: payment?.status ?? '',
+        orderStatus: order.currentStatus,
+      }));
+    });
+    const dateSuffix = new Date().toISOString().slice(0, 10);
+    const attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
+
+    if (format === 'csv' || format === 'both') {
+      attachments.push({
+        filename: `ohoo-purchase-history-${dateSuffix}.csv`,
+        content: Buffer.from(`\uFEFF${csv}`, 'utf8'),
+        contentType: 'text/csv; charset=utf-8',
+      });
+    }
+    if (format === 'pdf' || format === 'both') {
+      attachments.push({
+        filename: `ohoo-purchase-history-${dateSuffix}.pdf`,
+        content: await this.purchaseHistoryPdf!.render({
+          customerName: user.firstName ?? 'Customer',
+          customerEmail: user.email,
+          fromLabel,
+          toLabel,
+          orderCount: orders.length,
+          itemCount,
+          totalValue,
+          currency: orders[0]?.currency ?? 'NGN',
+          generatedAt: new Date(),
+          items: statementItems,
+        }),
+        contentType: 'application/pdf',
+      });
+    }
+    const attachmentDescription =
+      format === 'both'
+        ? 'PDF and CSV statements'
+        : format === 'pdf'
+          ? 'PDF statement'
+          : 'CSV statement';
+
+    await this.mail.sendTemplate(
+      'purchaseHistory',
+      user.email,
+      {
+        firstName: user.firstName ?? 'Customer',
+        fromLabel,
+        toLabel,
+        orderCount: orders.length,
+        itemCount,
+        totalValue,
+        attachmentDescription,
+        orders: orders.slice(0, 10).map((order) => ({
+          orderNumber: order.orderNumber,
+          purchasedAt: displayDate(order.placedAt),
+          storeName: order.store.storeName,
+          itemCount: order.items.length,
+          total: order.total.toString(),
+          paymentStatus: order.allocations[0]?.paymentGroup.status ?? '',
+        })),
+      },
+      userId,
+      undefined,
+      {
+        attachments,
+      },
+    );
+
+    return {
+      status: 'sent',
+      email: maskEmail(user.email),
+      orderCount: orders.length,
+      itemCount,
+      format,
+      from: from?.toISOString() ?? null,
+      to: to?.toISOString() ?? null,
+    };
   }
 
   async one(userId: number, id: number) {

@@ -1,13 +1,23 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateStoreDto, UpdateStoreDto, UpsertStoreProductDto } from './dto/store.dto';
 import { StoreCampaignDto, StoreOrderQueryDto } from './dto/store-operations.dto';
+import { UpdateStoreOperatingHoursDto } from './dto/store-operating-hours.dto';
+import { StoreAvailabilityService } from './store-availability.service';
 
 @Injectable()
 export class StoresService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly availability: StoreAvailabilityService = new StoreAvailabilityService(),
+  ) {}
 
   private paginated<T>(items: T[], total: number, page: number, limit: number) {
     return { items, total, page, limit, pages: Math.ceil(total / limit) };
@@ -214,8 +224,105 @@ export class StoresService {
     await this.assertAccess(userId, storeId);
     return this.prisma.store.findUnique({
       where: { id: storeId },
-      include: { category: true, images: { orderBy: { sortOrder: 'asc' } } },
+      include: {
+        category: true,
+        images: { orderBy: { sortOrder: 'asc' } },
+        operatingHours: { orderBy: { dayOfWeek: 'asc' } },
+      },
     });
+  }
+
+  async operatingHours(userId: number, storeId: number) {
+    await this.assertAccess(userId, storeId);
+    const store = await this.prisma.store.findUniqueOrThrow({
+      where: { id: storeId },
+      include: { operatingHours: { orderBy: { dayOfWeek: 'asc' } } },
+    });
+    return this.operatingHoursResponse(store);
+  }
+
+  async updateOperatingHours(userId: number, storeId: number, dto: UpdateStoreOperatingHoursDto) {
+    await this.assertAccess(userId, storeId);
+    const uniqueDays = new Set(dto.hours.map((hour) => hour.dayOfWeek));
+    if (uniqueDays.size !== dto.hours.length)
+      throw new BadRequestException('Only one operating-hours entry is allowed per day.');
+    if (dto.timezone) {
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: dto.timezone }).format();
+      } catch {
+        throw new BadRequestException('timezone must be a valid IANA timezone.');
+      }
+    }
+    for (const hour of dto.hours) {
+      if (!hour.isClosed && (!hour.opensAt || !hour.closesAt))
+        throw new BadRequestException('Open days require opensAt and closesAt.');
+    }
+    const store = await this.prisma.$transaction(async (tx) => {
+      await tx.storeOperatingHour.deleteMany({ where: { storeId } });
+      if (dto.hours.length) {
+        await tx.storeOperatingHour.createMany({
+          data: dto.hours.map((hour) => ({
+            storeId,
+            dayOfWeek: hour.dayOfWeek,
+            opensMinute: hour.isClosed ? null : this.minuteOfDay(hour.opensAt!),
+            closesMinute: hour.isClosed ? null : this.minuteOfDay(hour.closesAt!),
+            isClosed: hour.isClosed,
+          })),
+        });
+      }
+      return tx.store.update({
+        where: { id: storeId },
+        data: {
+          timezone: dto.timezone,
+          temporarilyClosedUntil:
+            dto.temporarilyClosedUntil === undefined
+              ? undefined
+              : dto.temporarilyClosedUntil
+                ? new Date(dto.temporarilyClosedUntil)
+                : null,
+        },
+        include: { operatingHours: { orderBy: { dayOfWeek: 'asc' } } },
+      });
+    });
+    return this.operatingHoursResponse(store);
+  }
+
+  private operatingHoursResponse(
+    store: Awaited<ReturnType<typeof this.prisma.store.findUniqueOrThrow>>,
+  ) {
+    const typed = store as typeof store & {
+      operatingHours: Array<{
+        dayOfWeek: number;
+        opensMinute: number | null;
+        closesMinute: number | null;
+        isClosed: boolean;
+      }>;
+      timezone: string;
+      temporarilyClosedUntil: Date | null;
+      storeName: string;
+      isActive: boolean;
+    };
+    return {
+      timezone: typed.timezone,
+      temporarilyClosedUntil: typed.temporarilyClosedUntil,
+      acceptsScheduledOrders: false,
+      availability: this.availability.evaluate(typed),
+      hours: typed.operatingHours.map((hour) => ({
+        dayOfWeek: hour.dayOfWeek,
+        opensAt: hour.opensMinute === null ? null : this.formatMinute(hour.opensMinute),
+        closesAt: hour.closesMinute === null ? null : this.formatMinute(hour.closesMinute),
+        isClosed: hour.isClosed,
+      })),
+    };
+  }
+
+  private minuteOfDay(value: string) {
+    const [hour, minute] = value.split(':').map(Number);
+    return hour * 60 + minute;
+  }
+
+  private formatMinute(value: number) {
+    return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
   }
 
   async overview(userId: number, storeId: number) {
